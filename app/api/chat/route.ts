@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { z } from "zod"
 import { streamText, isStepCount } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { conciliacionTools } from "@/lib/agents/tools/conciliacion"
@@ -6,8 +7,16 @@ import { ventasTools } from "@/lib/agents/tools/ventas"
 import { orchestratorTools } from "@/lib/agents/tools/orchestrator"
 import { actionTools } from "@/lib/agents/tools/actions"
 import { logUso } from "@/lib/ai/log-uso"
+import { rateLimit, ipOf } from "@/lib/rate-limit"
 
 const ALL_TOOLS = { ...conciliacionTools, ...ventasTools, ...orchestratorTools, ...actionTools }
+
+const BodySchema = z.object({
+  messages: z.array(z.object({
+    role: z.enum(["user", "assistant"]),
+    content: z.string().min(1).max(200_000), // mensajes con contexto OCR pueden ser grandes
+  })).min(1).max(30),
+})
 
 const SYSTEM = `Sos el asistente de RyM Agente, sistema contable para Argentina.
 
@@ -25,7 +34,14 @@ function getModel() {
 }
 
 export async function POST(req: NextRequest) {
-  const { messages } = await req.json()
+  if (Number(req.headers.get("content-length") ?? 0) > 2_000_000)
+    return NextResponse.json({ error: "Payload demasiado grande" }, { status: 413 })
+  if (!rateLimit(`chat:${ipOf(req)}`, 10, 60_000))
+    return NextResponse.json({ error: "Demasiadas solicitudes" }, { status: 429 })
+  const parsed = BodySchema.safeParse(await req.json().catch(() => null))
+  if (!parsed.success)
+    return NextResponse.json({ error: "Entrada inválida" }, { status: 400 })
+  const { messages } = parsed.data
   const enc = new TextEncoder()
 
   const model = getModel()
