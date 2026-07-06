@@ -17,7 +17,14 @@ function getDb(): Drizzle {
     // bajo ráfagas concurrentes (Promise.all) sobre conexiones tibias. El transaction pooler
     // (6543) es solo para serverless. En 6543 hay que forzar prepare:false (pgbouncer no lo soporta).
     const isTransactionPooler = url.includes(":6543")
-    const client = postgres(url, { prepare: !isTransactionPooler, max: 5 })
+    // max:15 para las ráfagas Promise.all; idle_timeout/max_lifetime reciclan
+    // conexiones antes de que Supabase las cierre server-side (evita socket muerto).
+    const client = postgres(url, {
+      prepare: !isTransactionPooler,
+      max: 15,
+      idle_timeout: 20,      // segundos
+      max_lifetime: 60 * 30, // 30 min
+    })
     g._rymDb = drizzle(client, { schema })
   }
   return g._rymDb

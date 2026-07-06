@@ -1,10 +1,11 @@
 import { tool } from "ai"
 import { z } from "zod"
 import { db } from "@/lib/db"
-import { conciliaciones, movimientos as movimientosTable, asientos as asientosTable, matches, discrepancias } from "@/lib/db/schema"
+import { conciliaciones, movimientos as movimientosTable, asientos as asientosTable, discrepancias } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import { conciliar } from "@/lib/conciliacion/matching"
 import { upsertConciliacion, getConciliacion } from "@/lib/conciliacion/registry"
+import { reemplazarMatchesYDiscrepancias } from "@/lib/conciliacion/persist"
 import { centavosAString } from "@/lib/conciliacion/matching"
 import { approveConciliacion } from "@/lib/conciliacion/approve"
 import crypto from "crypto"
@@ -67,34 +68,11 @@ export const actionTools = {
         session.saldoMayor
       )
 
-      // Guardar matches en DB
-      await db.delete(matches).where(eq(matches.conciliacionId, sessionId))
-      await db.delete(discrepancias).where(eq(discrepancias.conciliacionId, sessionId))
-
-      if (resultado.matches.length > 0) {
-        await db.insert(matches).values(resultado.matches.map(m => ({
-          conciliacionId: sessionId,
-          movimientoId: m.movimientoId,
-          asientoId: m.asientoId,
-          score: m.score,
-          motivo: m.motivo,
-          tipo: aprobarMatches ? "confirmed" : m.tipo,
-          diferenciaMonto: m.diferenciaMonto,
-          explicacion: m.explicacion,
-        })))
-      }
-
-      if (resultado.discrepancias.length > 0) {
-        await db.insert(discrepancias).values(resultado.discrepancias.map(d => ({
-          conciliacionId: sessionId,
-          tipo: d.tipo,
-          fecha: d.fecha,
-          descripcion: d.descripcion,
-          monto: d.monto,
-          movimientoId: d.movimientoId,
-          asientoId: d.asientoId,
-        })))
-      }
+      // Guardar matches + discrepancias en DB (atómico)
+      const matchesToSave = aprobarMatches
+        ? resultado.matches.map(m => ({ ...m, tipo: "confirmed" as const }))
+        : resultado.matches
+      await reemplazarMatchesYDiscrepancias(sessionId, matchesToSave, resultado.discrepancias)
 
       // Actualizar sesión
       await upsertConciliacion(sessionId, {

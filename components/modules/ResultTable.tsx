@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useMemo, type ReactNode } from "react"
-import { CheckCircle2, XCircle, AlertCircle, Lightbulb, HelpCircle } from "lucide-react"
+import { useState, useMemo } from "react"
+import { CheckCircle2, XCircle, AlertCircle, Lightbulb, HelpCircle, Download } from "lucide-react"
 import {
   Table,
   TableBody,
@@ -15,7 +15,8 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import type { ResultadoConciliacion, Match } from "@/lib/types"
 import { centavosAString } from "@/lib/conciliacion/matching"
-import { categorizarMovimiento, normalizeConcepto } from "@/lib/extractos/categorize"
+import { explicarGap } from "@/lib/conciliacion/explicar-gap"
+import { bucketConcepto } from "@/lib/extractos/impuestos"
 
 interface ResultTableProps {
   resultado: ResultadoConciliacion
@@ -23,7 +24,7 @@ interface ResultTableProps {
 }
 
 export function ResultTable({ resultado, sessionId }: ResultTableProps) {
-  const { discrepancias, movimientos, asientos, saldoBanco, saldoMayor, conceptosPendientes, conceptosPendientesTango, diferencia, candidatosAConciliarIds, sumaPartidas, diferenciaAjustada } =
+  const { discrepancias, movimientos, asientos, saldoBanco, saldoMayor, diferencia, candidatosAConciliarIds, sumaPartidas } =
     resultado
 
   const [matchStates, setMatchStates] = useState<Record<number, "confirmed" | "rejected">>({})
@@ -39,67 +40,89 @@ export function ResultTable({ resultado, sessionId }: ResultTableProps) {
 
   const candidatosSet = new Set(candidatosAConciliarIds ?? [])
 
-  const CATEGORIA_LABELS: Record<string, string> = {
-    impuesto: "Impuestos",
-    percepcion: "Percepciones",
-    transferencia: "Transferencias",
-    cheque: "Cheques",
-    comision: "Comisiones",
-    otro: "Otros",
-  }
-
-  // Resumen por categoría: banco neto + tango neto. Se cancelan cuando están conciliados (banco negativo + tango positivo ≈ 0)
-  const categorySummary = useMemo(() => {
-    const bancoMap: Record<string, number> = {}
+  // ── Conciliación de impuestos: Banco (fuente de verdad) vs Mayor ──────────
+  // Agrupa banco y mayor por el MISMO bucket de impuesto → comparación precisa.
+  const impuestosSummary = useMemo(() => {
+    const map = new Map<string, { bucket: string; banco: number; mayor: number }>()
     for (const m of movimientos) {
-      const cat = m.categoria ?? "otro"
-      bancoMap[cat] = (bancoMap[cat] ?? 0) + m.monto
+      const b = bucketConcepto(m.descripcion, m.monto, m.categoria)
+      const p = map.get(b) ?? { bucket: b, banco: 0, mayor: 0 }
+      p.banco += m.monto
+      map.set(b, p)
     }
-    const tangoMap: Record<string, number> = {}
     for (const a of asientos) {
-      const cat = categorizarMovimiento(a.descripcion)
-      tangoMap[cat] = (tangoMap[cat] ?? 0) + a.monto
+      const b = bucketConcepto(a.descripcion, a.monto)
+      const p = map.get(b) ?? { bucket: b, banco: 0, mayor: 0 }
+      p.mayor += a.monto
+      map.set(b, p)
     }
-    const cats = new Set([...Object.keys(bancoMap), ...Object.keys(tangoMap)])
-    return [...cats]
-      .map(cat => ({
-        cat,
-        banco: bancoMap[cat] ?? 0,
-        tango: tangoMap[cat] ?? 0,
-        diff: (bancoMap[cat] ?? 0) + (tangoMap[cat] ?? 0),
-      }))
-      .filter(c => c.banco !== 0 || c.tango !== 0)
-      .sort((a, b) => Math.abs(b.banco) - Math.abs(a.banco))
-  }, [movimientos, asientos])
-
-  // Detalle por concepto: agrupa banco+Tango por (categoria, descripcion normalizada)
-  const conceptosSummary = useMemo(() => {
-    const map = new Map<string, { cat: string; concepto: string; banco: number; tango: number }>()
-
-    for (const m of movimientos) {
-      const cat = m.categoria ?? "otro"
-      const concepto = normalizeConcepto(m.descripcion)
-      const key = `${cat}||${concepto}`
-      const prev = map.get(key)
-      if (prev) prev.banco += m.monto
-      else map.set(key, { cat, concepto, banco: m.monto, tango: 0 })
-    }
-
-    for (const a of asientos) {
-      const cat = categorizarMovimiento(a.descripcion)
-      const concepto = normalizeConcepto(a.descripcion)
-      const key = `${cat}||${concepto}`
-      const prev = map.get(key)
-      if (prev) prev.tango += a.monto
-      else map.set(key, { cat, concepto, banco: 0, tango: a.monto })
-    }
-
+    // Magnitudes: banco y mayor registran el mismo impuesto con signos opuestos;
+    // comparamos importes absolutos. diff > 0 → falta en el mayor.
     return [...map.values()]
-      .filter(c => c.banco !== 0 || c.tango !== 0)
-      .sort((a, b) => a.cat !== b.cat
-        ? a.cat.localeCompare(b.cat)
-        : Math.abs(b.banco) - Math.abs(a.banco))
+      .map(r => {
+        const banco = Math.abs(r.banco)
+        const mayor = Math.abs(r.mayor)
+        return { bucket: r.bucket, banco, mayor, diff: banco - mayor }
+      })
+      .filter(r => r.banco !== 0 || r.mayor !== 0)
+      .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff) || b.banco - a.banco)
   }, [movimientos, asientos])
+
+  // Gap a explicar: banco (fuente de verdad) − mayor. Los ítems sin conciliar
+  // lo explican POR MONTO; el bucket solo agrupa para presentar.
+  const gapBruto = saldoBanco - saldoMayor
+  const explicacion = useMemo(
+    () => explicarGap(discrepancias, gapBruto, sumaPartidas ?? 0),
+    [discrepancias, gapBruto, sumaPartidas]
+  )
+  const totalVerificacion = saldoMayor + explicacion.totalExplicado + (sumaPartidas ?? 0)
+
+  function downloadCsv() {
+    const esc = (v: string | number) => {
+      const s = String(v)
+      return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    }
+    const rows: string[] = []
+    rows.push("Conciliación de impuestos — Banco (fuente de verdad) vs Mayor")
+    rows.push("")
+    rows.push(["Impuesto", "Banco", "Mayor", "Diferencia"].join(","))
+    for (const r of impuestosSummary) {
+      rows.push([r.bucket, centavosAString(r.banco), centavosAString(r.mayor), centavosAString(r.diff)].map(esc).join(","))
+    }
+    rows.push("")
+    rows.push("Explicación de la diferencia (por montos)")
+    rows.push(["Grupo/Ítem", "Lado", "Ítems", "Fecha", "Total", "Acción"].join(","))
+    for (const g of explicacion.grupos) {
+      rows.push([g.bucket, g.lado, g.items.length, "", centavosAString(g.total),
+        g.lado === "banco" ? "subir al mayor de una vez" : "verificar en banco"].map(esc).join(","))
+      for (const d of g.items) {
+        rows.push([`  ${d.descripcion}`, "", "", d.fecha, centavosAString(d.monto), ""].map(esc).join(","))
+      }
+    }
+    for (const d of explicacion.cuentasAConciliar) {
+      rows.push([d.descripcion, d.tipo === "en_extracto_no_en_mayor" ? "banco" : "mayor", 1,
+        d.fecha, centavosAString(d.monto), "cuenta a conciliar"].map(esc).join(","))
+    }
+    rows.push("")
+    rows.push("Verificación (banco = fuente de verdad)")
+    rows.push(["Concepto", "Monto"].join(","))
+    rows.push(["Mayor Tango", centavosAString(saldoMayor)].map(esc).join(","))
+    rows.push(["+ Por conciliar + cuentas a conciliar", centavosAString(explicacion.totalExplicado)].map(esc).join(","))
+    if ((sumaPartidas ?? 0) !== 0) {
+      rows.push(["+ Partidas manuales", centavosAString(sumaPartidas ?? 0)].map(esc).join(","))
+    }
+    rows.push(["= Total", centavosAString(totalVerificacion)].map(esc).join(","))
+    rows.push(["Banco (extracto)", centavosAString(saldoBanco)].map(esc).join(","))
+    rows.push([explicacion.cuadra ? "CUADRA" : "Residual sin explicar", centavosAString(explicacion.residual)].map(esc).join(","))
+
+    const blob = new Blob(["﻿" + rows.join("\n")], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `conciliacion-${sessionId ?? "impuestos"}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const getMovimiento = (id: string) => movimientos.find((m) => m.id === id)
   const getAsiento = (id: string) => asientos.find((a) => a.id === id)
@@ -120,70 +143,173 @@ export function ResultTable({ resultado, sessionId }: ResultTableProps) {
 
   return (
     <div className="space-y-6">
-      {/* Fórmula de conciliación */}
-      <div className="rounded-lg border bg-slate-50/50 p-5 space-y-3">
-        <h3 className="text-sm font-semibold">Fórmula de conciliación</h3>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span>Saldo mayor Tango (última fila):</span>
-            <span className="tabular-nums font-medium">{centavosAString(saldoMayor)}</span>
-          </div>
-          {conceptosPendientes !== 0 && (
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>+ Banco no contabilizados en Tango:</span>
-              <span className="tabular-nums">{centavosAString(conceptosPendientes)}</span>
-            </div>
-          )}
-          {(conceptosPendientesTango ?? 0) !== 0 && (
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>− Tango no en extracto banco:</span>
-              <span className="tabular-nums">({centavosAString(conceptosPendientesTango ?? 0)})</span>
-            </div>
-          )}
-          <div className="flex justify-between">
-            <span>Saldo extracto bancario:</span>
-            <span className="tabular-nums font-medium">{centavosAString(saldoBanco)}</span>
-          </div>
-          <div className="border-t border-slate-200 my-2 pt-2 flex justify-between">
-            <span className="font-medium">Diferencia:</span>
-            <span className={`tabular-nums font-semibold ${diferencia === 0 ? "text-emerald-700" : "text-amber-700"}`}>
-              {centavosAString(diferencia)}
-            </span>
-          </div>
-          {sumaPartidas !== undefined && sumaPartidas !== 0 && (
-            <>
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Partidas manuales adicionales:</span>
-                <span className="tabular-nums">{centavosAString(sumaPartidas)}</span>
-              </div>
-              <div className="border-t border-slate-200 my-2 pt-2 flex justify-between">
-                <span>Diferencia ajustada:</span>
-                <span className={`tabular-nums font-semibold ${diferenciaAjustada === 0 ? "text-emerald-700" : "text-amber-700"}`}>
-                  {centavosAString(diferenciaAjustada ?? 0)}
-                </span>
-              </div>
-            </>
-          )}
+      {/* Encabezado + export */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-bold">Conciliación de impuestos</h2>
+          <p className="text-xs text-muted-foreground">El extracto bancario es la fuente de verdad. El mayor debe igualarlo.</p>
         </div>
+        <Button size="sm" variant="outline" onClick={downloadCsv}>
+          <Download className="h-4 w-4 mr-2" />
+          Descargar CSV
+        </Button>
       </div>
 
-      {/* Resumen saldos */}
+      {/* Banner: gap a explicar (banco = fuente de verdad) */}
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Saldo Banco</p>
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Banco (extracto)</p>
           <p className="text-2xl font-bold mt-1 tabular-nums">{centavosAString(saldoBanco)}</p>
         </div>
         <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Saldo Mayor (Tango)</p>
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Mayor (Tango)</p>
           <p className="text-2xl font-bold mt-1 tabular-nums">{centavosAString(saldoMayor)}</p>
         </div>
-        <div className={`rounded-lg border p-4 ${diferencia === 0 ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"}`}>
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Diferencia</p>
-          <p className={`text-2xl font-bold mt-1 tabular-nums ${diferencia === 0 ? "text-emerald-700" : "text-amber-700"}`}>
-            {centavosAString(diferencia)}
-          </p>
+        <div className="rounded-lg border bg-slate-50 border-slate-200 p-4">
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Diferencia a explicar</p>
+          <p className="text-2xl font-bold mt-1 tabular-nums">{centavosAString(gapBruto)}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">se explica abajo, por montos</p>
         </div>
       </div>
+
+      {/* Impuestos: Banco vs Mayor (tabla principal) */}
+      <div className="rounded-lg border bg-card">
+        <div className="px-5 py-3 border-b">
+          <h3 className="text-sm font-semibold">Impuestos: Banco vs Mayor</h3>
+          <p className="text-[11px] text-muted-foreground">Total acumulado por tipo. Diferencia &gt; 0 = falta registrar en el mayor.</p>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Impuesto</TableHead>
+              <TableHead className="text-right">Banco</TableHead>
+              <TableHead className="text-right">Mayor</TableHead>
+              <TableHead className="text-right">Diferencia</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {impuestosSummary.map((r) => (
+              <TableRow key={r.bucket}>
+                <TableCell className="font-medium text-sm">{r.bucket}</TableCell>
+                <TableCell className="text-right tabular-nums text-sm">{centavosAString(r.banco)}</TableCell>
+                <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{centavosAString(r.mayor)}</TableCell>
+                <TableCell className={`text-right tabular-nums text-sm font-semibold ${r.diff === 0 ? "text-emerald-700" : "text-amber-700"}`}>
+                  {r.diff === 0 ? "OK" : `${centavosAString(r.diff)}${r.diff > 0 ? " · falta en mayor" : " · de más en mayor"}`}
+                </TableCell>
+              </TableRow>
+            ))}
+            <TableRow className="border-t-2 bg-slate-50">
+              <TableCell className="font-semibold text-sm">Total</TableCell>
+              <TableCell className="text-right tabular-nums text-sm font-semibold">{centavosAString(impuestosSummary.reduce((s, r) => s + r.banco, 0))}</TableCell>
+              <TableCell className="text-right tabular-nums text-sm font-semibold">{centavosAString(impuestosSummary.reduce((s, r) => s + r.mayor, 0))}</TableCell>
+              <TableCell className={`text-right tabular-nums text-sm font-semibold ${impuestosSummary.reduce((s, r) => s + r.diff, 0) === 0 ? "text-emerald-700" : "text-amber-700"}`}>
+                {centavosAString(impuestosSummary.reduce((s, r) => s + r.diff, 0))}
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Qué explica la diferencia (por montos, agrupado para presentar) */}
+      <div>
+        <h3 className="text-sm font-semibold flex items-center gap-2 mb-1">
+          <AlertCircle className="h-4 w-4 text-amber-600" />
+          Qué explica la diferencia (por montos)
+        </h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Ítems sin conciliar agrupados por tipo. Los grupos se suben al mayor de una vez; los ítems sueltos van como cuenta a conciliar.
+        </p>
+        {explicacion.grupos.length === 0 && explicacion.cuentasAConciliar.length === 0 ? (
+          <p className="text-sm text-emerald-600 font-medium">Nada pendiente: banco y mayor coinciden.</p>
+        ) : (
+          <div className="space-y-2">
+            {explicacion.grupos.map((g) => (
+              <details key={`${g.lado}||${g.bucket}`} className="rounded-lg border bg-card">
+                <summary className="flex items-center gap-3 px-4 py-2.5 cursor-pointer text-sm">
+                  <span className="font-medium">{g.bucket}</span>
+                  <Badge variant="outline" className="text-xs font-normal">
+                    {g.items.length} ítems
+                  </Badge>
+                  <Badge variant="outline" className={`text-xs font-normal ${g.lado === "banco" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-blue-50 text-blue-700 border-blue-200"}`}>
+                    {g.lado === "banco" ? "subir al mayor de una vez" : "en mayor, sin respaldo en banco"}
+                  </Badge>
+                  <span className="ml-auto tabular-nums font-semibold">{centavosAString(g.total)}</span>
+                </summary>
+                <div className="border-t">
+                  <Table>
+                    <TableBody>
+                      {g.items.map((d, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="text-sm tabular-nums w-28">{d.fecha}</TableCell>
+                          <TableCell className="text-sm">{d.descripcion}</TableCell>
+                          <TableCell className="text-sm text-right tabular-nums">{centavosAString(d.monto)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </details>
+            ))}
+
+            {explicacion.cuentasAConciliar.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50/40">
+                <div className="px-4 py-2.5 border-b border-amber-200">
+                  <span className="text-sm font-semibold">Cuentas a conciliar (ítems individuales)</span>
+                  <p className="text-[11px] text-muted-foreground">Difieren del resto: no forman grupo, se concilian por separado.</p>
+                </div>
+                <Table>
+                  <TableBody>
+                    {explicacion.cuentasAConciliar.map((d, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="text-sm tabular-nums w-28">{d.fecha}</TableCell>
+                        <TableCell className="text-sm">{d.descripcion}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {d.tipo === "en_extracto_no_en_mayor" ? "en banco, falta en mayor" : "en mayor, sin respaldo en banco"}
+                        </TableCell>
+                        <TableCell className="text-sm text-right tabular-nums font-medium">{centavosAString(d.monto)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Cierre de verificación: banco = fuente de verdad */}
+      <div className={`rounded-lg border p-5 space-y-2 ${explicacion.cuadra ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"}`}>
+        <h3 className="text-sm font-semibold">Verificación</h3>
+        <div className="space-y-1.5 text-sm">
+          <div className="flex justify-between">
+            <span>Mayor Tango:</span>
+            <span className="tabular-nums">{centavosAString(saldoMayor)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>+ Por conciliar + cuentas a conciliar:</span>
+            <span className="tabular-nums">{centavosAString(explicacion.totalExplicado)}</span>
+          </div>
+          {(sumaPartidas ?? 0) !== 0 && (
+            <div className="flex justify-between">
+              <span>+ Partidas manuales:</span>
+              <span className="tabular-nums">{centavosAString(sumaPartidas ?? 0)}</span>
+            </div>
+          )}
+          <div className="border-t border-current/10 pt-1.5 flex justify-between font-medium">
+            <span>= Total:</span>
+            <span className="tabular-nums">{centavosAString(totalVerificacion)}</span>
+          </div>
+          <div className="flex justify-between font-medium">
+            <span>Banco (extracto):</span>
+            <span className="tabular-nums">{centavosAString(saldoBanco)}</span>
+          </div>
+          <div className={`flex justify-between font-bold ${explicacion.cuadra ? "text-emerald-700" : "text-amber-700"}`}>
+            <span>{explicacion.cuadra ? "✓ CUADRA" : "Residual sin explicar:"}</span>
+            <span className="tabular-nums">{explicacion.cuadra ? "" : centavosAString(explicacion.residual)}</span>
+          </div>
+        </div>
+      </div>
+
 
       <Separator />
 
@@ -373,201 +499,6 @@ export function ResultTable({ resultado, sessionId }: ResultTableProps) {
         </div>
       )}
 
-      <Separator />
-
-      {/* Resumen por tipo de movimiento */}
-      <div>
-        <h3 className="text-sm font-semibold flex items-center gap-2 mb-1">
-          Resumen por tipo
-        </h3>
-        <p className="text-xs text-muted-foreground mb-3">
-          Banco (débitos negativos) + Tango (haberes positivos) se cancelan cuando están conciliados. Diferencia ≠ 0 indica items pendientes en esa categoría.
-        </p>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Tipo</TableHead>
-              <TableHead className="text-right">Total Banco</TableHead>
-              <TableHead className="text-right">Total Tango</TableHead>
-              <TableHead className="text-right">Diferencia</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {categorySummary.map(({ cat, banco, tango, diff }) => (
-              <TableRow key={cat}>
-                <TableCell className="font-medium text-sm">{CATEGORIA_LABELS[cat] ?? cat}</TableCell>
-                <TableCell className={`text-right tabular-nums text-sm ${banco < 0 ? "text-destructive" : "text-emerald-700"}`}>
-                  {centavosAString(banco)}
-                </TableCell>
-                <TableCell className={`text-right tabular-nums text-sm ${tango < 0 ? "text-destructive" : "text-emerald-700"}`}>
-                  {centavosAString(tango)}
-                </TableCell>
-                <TableCell className={`text-right tabular-nums text-sm font-semibold ${diff === 0 ? "text-emerald-700" : "text-amber-700"}`}>
-                  {centavosAString(diff)}
-                </TableCell>
-              </TableRow>
-            ))}
-            {/* Totales */}
-            <TableRow className="border-t-2 bg-slate-50">
-              <TableCell className="font-semibold text-sm">Total</TableCell>
-              <TableCell className={`text-right tabular-nums text-sm font-semibold ${categorySummary.reduce((s, c) => s + c.banco, 0) < 0 ? "text-destructive" : "text-emerald-700"}`}>
-                {centavosAString(categorySummary.reduce((s, c) => s + c.banco, 0))}
-              </TableCell>
-              <TableCell className={`text-right tabular-nums text-sm font-semibold ${categorySummary.reduce((s, c) => s + c.tango, 0) < 0 ? "text-destructive" : "text-emerald-700"}`}>
-                {centavosAString(categorySummary.reduce((s, c) => s + c.tango, 0))}
-              </TableCell>
-              <TableCell className={`text-right tabular-nums text-sm font-semibold ${categorySummary.reduce((s, c) => s + c.diff, 0) === 0 ? "text-emerald-700" : "text-amber-700"}`}>
-                {centavosAString(categorySummary.reduce((s, c) => s + c.diff, 0))}
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Detalle por concepto */}
-      {conceptosSummary.length > 0 && (
-        <>
-          <Separator />
-          <div>
-            <h3 className="text-sm font-semibold mb-1">Detalle por concepto</h3>
-            <p className="text-xs text-muted-foreground mb-3">
-              Banco y Tango agrupados por concepto normalizado dentro de cada categoría.
-            </p>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Concepto</TableHead>
-                  <TableHead className="text-right">Total Banco</TableHead>
-                  <TableHead className="text-right">Total Tango</TableHead>
-                  <TableHead className="text-right">Diferencia</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(() => {
-                  const rows: ReactNode[] = []
-                  let currentCat = ""
-                  let subtotalBanco = 0
-                  let subtotalTango = 0
-
-                  const flushSubtotal = (cat: string) => {
-                    const diff = subtotalBanco + subtotalTango
-                    rows.push(
-                      <TableRow key={`sub-${cat}`} className="bg-slate-50 border-t">
-                        <TableCell className="text-xs font-semibold text-muted-foreground pl-4">
-                          Subtotal {CATEGORIA_LABELS[cat] ?? cat}
-                        </TableCell>
-                        <TableCell className={`text-right tabular-nums text-xs font-semibold ${subtotalBanco < 0 ? "text-destructive" : "text-emerald-700"}`}>
-                          {centavosAString(subtotalBanco)}
-                        </TableCell>
-                        <TableCell className={`text-right tabular-nums text-xs font-semibold ${subtotalTango < 0 ? "text-destructive" : "text-emerald-700"}`}>
-                          {centavosAString(subtotalTango)}
-                        </TableCell>
-                        <TableCell className={`text-right tabular-nums text-xs font-semibold ${diff === 0 ? "text-emerald-700" : "text-amber-700"}`}>
-                          {centavosAString(diff)}
-                        </TableCell>
-                      </TableRow>
-                    )
-                    subtotalBanco = 0
-                    subtotalTango = 0
-                  }
-
-                  for (const { cat, concepto, banco, tango } of conceptosSummary) {
-                    if (cat !== currentCat) {
-                      if (currentCat !== "") flushSubtotal(currentCat)
-                      currentCat = cat
-                      rows.push(
-                        <TableRow key={`cat-${cat}`} className="bg-slate-100">
-                          <TableCell colSpan={4} className="text-xs font-bold uppercase tracking-wider text-muted-foreground py-1.5">
-                            {CATEGORIA_LABELS[cat] ?? cat}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    }
-                    subtotalBanco += banco
-                    subtotalTango += tango
-                    const diff = banco + tango
-                    rows.push(
-                      <TableRow key={`${cat}||${concepto}`}>
-                        <TableCell className="text-sm pl-6">{concepto}</TableCell>
-                        <TableCell className={`text-right tabular-nums text-sm ${banco < 0 ? "text-destructive" : banco > 0 ? "text-emerald-700" : "text-muted-foreground"}`}>
-                          {banco !== 0 ? centavosAString(banco) : "—"}
-                        </TableCell>
-                        <TableCell className={`text-right tabular-nums text-sm ${tango < 0 ? "text-destructive" : tango > 0 ? "text-emerald-700" : "text-muted-foreground"}`}>
-                          {tango !== 0 ? centavosAString(tango) : "—"}
-                        </TableCell>
-                        <TableCell className={`text-right tabular-nums text-sm font-medium ${diff === 0 ? "text-emerald-700" : "text-amber-700"}`}>
-                          {centavosAString(diff)}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  }
-                  if (currentCat !== "") flushSubtotal(currentCat)
-                  return rows
-                })()}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Totales de impuestos y percepciones */}
-          {(() => {
-            const TAX_CATS = new Set(["impuesto", "percepcion"])
-            const taxRows = conceptosSummary.filter(c => TAX_CATS.has(c.cat))
-            if (taxRows.length === 0) return null
-            const totalBanco = taxRows.reduce((s, c) => s + c.banco, 0)
-            const totalTango = taxRows.reduce((s, c) => s + c.tango, 0)
-            const totalDiff = totalBanco + totalTango
-            return (
-              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/50 p-4">
-                <h4 className="text-sm font-semibold mb-3">Resumen de impuestos y percepciones</h4>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Concepto</TableHead>
-                      <TableHead className="text-right">Banco</TableHead>
-                      <TableHead className="text-right">Tango</TableHead>
-                      <TableHead className="text-right">Diferencia</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {taxRows.map(({ cat, concepto, banco, tango }) => {
-                      const diff = banco + tango
-                      return (
-                        <TableRow key={`tax-${cat}||${concepto}`}>
-                          <TableCell className="text-sm">
-                            <span className="text-xs text-muted-foreground mr-2">{CATEGORIA_LABELS[cat] ?? cat}</span>
-                            {concepto}
-                          </TableCell>
-                          <TableCell className={`text-right tabular-nums text-sm ${banco < 0 ? "text-destructive" : banco > 0 ? "text-emerald-700" : "text-muted-foreground"}`}>
-                            {banco !== 0 ? centavosAString(banco) : "—"}
-                          </TableCell>
-                          <TableCell className={`text-right tabular-nums text-sm ${tango < 0 ? "text-destructive" : tango > 0 ? "text-emerald-700" : "text-muted-foreground"}`}>
-                            {tango !== 0 ? centavosAString(tango) : "—"}
-                          </TableCell>
-                          <TableCell className={`text-right tabular-nums text-sm font-medium ${diff === 0 ? "text-emerald-700" : "text-amber-700"}`}>
-                            {centavosAString(diff)}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                    <TableRow className="border-t-2 bg-amber-100/60">
-                      <TableCell className="font-semibold text-sm">Total impuestos + percepciones</TableCell>
-                      <TableCell className={`text-right tabular-nums text-sm font-semibold ${totalBanco < 0 ? "text-destructive" : "text-emerald-700"}`}>
-                        {centavosAString(totalBanco)}
-                      </TableCell>
-                      <TableCell className={`text-right tabular-nums text-sm font-semibold ${totalTango < 0 ? "text-destructive" : "text-emerald-700"}`}>
-                        {centavosAString(totalTango)}
-                      </TableCell>
-                      <TableCell className={`text-right tabular-nums text-sm font-semibold ${totalDiff === 0 ? "text-emerald-700" : "text-amber-700"}`}>
-                        {centavosAString(totalDiff)}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-            )
-          })()}
-        </>
-      )}
     </div>
   )
 }

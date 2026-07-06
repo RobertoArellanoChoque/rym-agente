@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/badge"
 import type { BankDetectionResult, Movimiento, Categoria } from "@/lib/types"
 import { centavosAString } from "@/lib/conciliacion/matching"
+import { acumularPorBucket } from "@/lib/extractos/impuestos"
 import { cn } from "@/lib/utils"
 
 const CATEGORIA_LABEL: Record<Categoria, string> = {
@@ -35,6 +36,7 @@ export function MovimientosPreview({ bank, movimientos, saldoAnterior, saldoFina
   const saldoFinalCalculado = saldoAnterior !== undefined
     ? saldoAnterior + sumaMovimientos
     : undefined
+  const acumulados = acumularPorBucket(movimientos)
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -78,6 +80,35 @@ export function MovimientosPreview({ bank, movimientos, saldoAnterior, saldoFina
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {acumulados.length > 0 && (
+        <div className="rounded-lg border bg-card">
+          <div className="px-4 py-2.5 border-b">
+            <h3 className="text-sm font-semibold">Impuestos acumulados</h3>
+            <p className="text-[11px] text-muted-foreground">Total por tipo, según lo detectado en el extracto (fuente de verdad)</p>
+          </div>
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Tipo</th>
+                <th className="text-right px-4 py-2 font-medium text-muted-foreground">Ítems</th>
+                <th className="text-right px-4 py-2 font-medium text-muted-foreground">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {acumulados.map((a) => (
+                <tr key={a.bucket} className="border-t">
+                  <td className="px-4 py-2">{a.bucket}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{a.n}</td>
+                  <td className={`px-4 py-2 text-right tabular-nums font-medium ${a.total >= 0 ? "text-emerald-700" : "text-destructive"}`}>
+                    {centavosAString(a.total)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

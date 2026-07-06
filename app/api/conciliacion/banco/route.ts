@@ -10,6 +10,7 @@ import { ALL_CONFIGS } from "@/lib/bancos/configs"
 import { generateJSON } from "@/lib/ai/client"
 import { parseExtractoBanco } from "@/lib/extractos/parse-direct"
 import { categorizarMovimiento } from "@/lib/extractos/categorize"
+import { saldoFinalPorFecha } from "@/lib/extractos/saldo-final"
 import { setSaldo } from "@/lib/saldos/manager"
 import { upsertConciliacion } from "@/lib/conciliacion/registry"
 import { db } from "@/lib/db"
@@ -210,6 +211,10 @@ export async function POST(req: NextRequest) {
     .filter((m) => m.fecha && !isNaN(m.monto) && m.monto !== 0)
     .map((m) => ({ ...m, id: randomUUID(), referencia: m.referencia ?? "", categoria: categorizarMovimiento(m.descripcion) }))
 
+  // saldoFinal robusto al orden de las filas: Patagonia lista más reciente
+  // primero, así que el saldo de cierre no es la última fila sino la más reciente.
+  const saldoFinal = saldoFinalPorFecha(movimientosConId, saldoFinalAI)
+
   // Replace existing movimientos atomically (re-upload scenario)
   await db.transaction(async (tx) => {
     await tx.delete(movimientosTable).where(eq(movimientosTable.conciliacionId, sessionId))
@@ -231,7 +236,7 @@ export async function POST(req: NextRequest) {
   if (bankResult.bankId !== "unknown" && movimientosConId.length > 0) {
     const sorted = [...movimientosConId].sort((a, b) => a.fecha.localeCompare(b.fecha))
     const ultimo = sorted[sorted.length - 1]
-    const ultimoSaldo = saldoFinalAI ?? ultimo.saldo ?? movimientosConId.reduce((s, m) => s + m.monto, 0)
+    const ultimoSaldo = saldoFinal ?? ultimo.saldo ?? movimientosConId.reduce((s, m) => s + m.monto, 0)
     try {
       await setSaldo(bankResult.bankId, {
         bankName: bankResult.bankName,
@@ -257,7 +262,7 @@ export async function POST(req: NextRequest) {
     bankName: bankResult.bankName,
     confidence: bankResult.confidence,
     saldoAnterior: saldoAnteriorAI,
-    saldoFinal: saldoFinalAI,
+    saldoFinal,
     movimientosCount: movimientosConId.length,
     ...(autoLabel && { label: autoLabel }),
   })
@@ -268,7 +273,7 @@ export async function POST(req: NextRequest) {
     movimientos: movimientosConId,
     total: movimientosConId.length,
     saldoAnterior: saldoAnteriorAI,
-    saldoFinal: saldoFinalAI,
+    saldoFinal,
     ...(autoLabel && { label: autoLabel }),
   })
 }

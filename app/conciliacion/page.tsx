@@ -196,7 +196,7 @@ function ConciliacionContent() {
             </div>
           )}
 
-          {active.stage === "done" && active.resultado && <ResultTable resultado={active.resultado} />}
+          {active.stage === "done" && active.resultado && <ResultTable resultado={active.resultado} sessionId={active.id} />}
         </>
       )}
     </div>

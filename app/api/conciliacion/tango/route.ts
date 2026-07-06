@@ -53,22 +53,24 @@ export async function POST(req: NextRequest) {
     .sort((a, b) => a.fecha.localeCompare(b.fecha))
     .at(-1)?.saldo
 
-  // Replace existing asientos for this session (re-upload scenario)
-  await db.delete(asientosTable).where(eq(asientosTable.conciliacionId, sessionId))
-  if (asientos.length > 0) {
-    await db.insert(asientosTable).values(asientos.map(a => ({
-      id: a.id,
-      conciliacionId: sessionId,
-      fecha: a.fecha,
-      descripcion: a.descripcion,
-      referencia: a.referencia,
-      monto: a.monto,
-      cuenta: a.cuenta,
-      debe: a.debe ?? null,
-      haber: a.haber ?? null,
-      saldo: a.saldo ?? null,
-    })))
-  }
+  // Replace existing asientos for this session (re-upload scenario) — atómico
+  await db.transaction(async (tx) => {
+    await tx.delete(asientosTable).where(eq(asientosTable.conciliacionId, sessionId))
+    if (asientos.length > 0) {
+      await tx.insert(asientosTable).values(asientos.map(a => ({
+        id: a.id,
+        conciliacionId: sessionId,
+        fecha: a.fecha,
+        descripcion: a.descripcion,
+        referencia: a.referencia,
+        monto: a.monto,
+        cuenta: a.cuenta,
+        debe: a.debe ?? null,
+        haber: a.haber ?? null,
+        saldo: a.saldo ?? null,
+      })))
+    }
+  })
 
   await upsertConciliacion(sessionId, {
     stage: "tango-done",

@@ -55,8 +55,8 @@ export const asientos = pgTable("asientos", {
 export const matches = pgTable("matches", {
   id: serial("id").primaryKey(),
   conciliacionId: text("conciliacion_id").notNull().references(() => conciliaciones.id, { onDelete: "cascade" }),
-  movimientoId: text("movimiento_id").notNull().references(() => movimientos.id),
-  asientoId: text("asiento_id").notNull().references(() => asientos.id),
+  movimientoId: text("movimiento_id").notNull().references(() => movimientos.id, { onDelete: "cascade" }),
+  asientoId: text("asiento_id").notNull().references(() => asientos.id, { onDelete: "cascade" }),
   score: integer("score").notNull(),
   motivo: text("motivo").notNull(),
   tipo: text("tipo").notNull().default("confirmed"), // confirmed|probable|rejected
@@ -64,6 +64,8 @@ export const matches = pgTable("matches", {
   explicacion: text("explicacion"),
 }, (t) => [
   index("matches_conciliacion_id_idx").on(t.conciliacionId),
+  index("matches_movimiento_id_idx").on(t.movimientoId),
+  index("matches_asiento_id_idx").on(t.asientoId),
 ])
 
 export const discrepancias = pgTable("discrepancias", {
@@ -144,7 +146,9 @@ export const retencionesArca = pgTable("retenciones_arca", {
   nroComprOrigen: text("nro_compr_origen").notNull().default(""),
   importe: centavos("importe").notNull(), // centavos
   creadoEn: text("creado_en").notNull(),
-})
+}, (t) => [
+  index("retenciones_arca_creado_en_idx").on(t.creadoEn),
+])
 
 export const retencionesTango = pgTable("retenciones_tango", {
   id: text("id").primaryKey(),
@@ -158,7 +162,9 @@ export const retencionesTango = pgTable("retenciones_tango", {
   haber: centavos("haber").notNull(), // centavos
   saldo: centavos("saldo").notNull(), // centavos
   creadoEn: text("creado_en").notNull(),
-})
+}, (t) => [
+  index("retenciones_tango_creado_en_idx").on(t.creadoEn),
+])
 
 export const sesiones = pgTable("sesiones", {
   id: text("id").primaryKey(),

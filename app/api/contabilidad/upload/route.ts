@@ -41,37 +41,43 @@ export async function POST(req: NextRequest) {
       const { filas } = await parseTangoXlsx(buffer)
       if (!filas.length)
         return NextResponse.json({ error: "No se encontraron asientos en el archivo" }, { status: 422 })
-      await db.insert(retencionesTango).values(filas.map(f => ({
-        id: crypto.randomUUID(), loteId,
-        codCta: f.codCta, descCta: f.descCta, fecha: f.fecha,
-        codComp: f.codComp, nComp: f.nComp,
-        debe: f.debe, haber: f.haber, saldo: f.saldo, creadoEn: now,
-      })))
-      if (sesionId) {
-        const [existing] = await db.select().from(sesiones).where(eq(sesiones.id, sesionId)).limit(1)
-        const datos = { ...(existing?.datos ?? {}) } as Record<string, unknown>
-        datos.tango = { count: filas.length, filas }
-        const estado = datos.arca && datos.tango ? "completado" : "activo"
-        await db.update(sesiones).set({ datos, estado, updatedAt: now }).where(eq(sesiones.id, sesionId))
-      }
+      // Insert + merge de sesión en UNA transacción con lock de fila (FOR UPDATE):
+      // serializa arca+tango concurrentes sobre la misma sesión (evita lost-update).
+      await db.transaction(async (tx) => {
+        await tx.insert(retencionesTango).values(filas.map(f => ({
+          id: crypto.randomUUID(), loteId,
+          codCta: f.codCta, descCta: f.descCta, fecha: f.fecha,
+          codComp: f.codComp, nComp: f.nComp,
+          debe: f.debe, haber: f.haber, saldo: f.saldo, creadoEn: now,
+        })))
+        if (sesionId) {
+          const [existing] = await tx.select().from(sesiones).where(eq(sesiones.id, sesionId)).for("update").limit(1)
+          const datos = { ...(existing?.datos ?? {}) } as Record<string, unknown>
+          datos.tango = { count: filas.length, filas }
+          const estado = datos.arca && datos.tango ? "completado" : "activo"
+          await tx.update(sesiones).set({ datos, estado, updatedAt: now }).where(eq(sesiones.id, sesionId))
+        }
+      })
       return NextResponse.json({ tipo: "tango", count: filas.length, filas })
     } else {
       const { jurisdiccion, filas } = await parseArcaXlsx(buffer)
       if (!filas.length)
         return NextResponse.json({ error: "No se encontraron retenciones en el archivo" }, { status: 422 })
-      await db.insert(retencionesArca).values(filas.map(f => ({
-        id: crypto.randomUUID(), loteId, jurisdiccion,
-        cuitAgente: f.cuitAgente, fechaRetencion: f.fechaRetencion,
-        tipo: f.tipo, letra: f.letra, nroComprobante: f.nroComprobante,
-        nroComprOrigen: f.nroComprOrigen, importe: f.importe, creadoEn: now,
-      })))
-      if (sesionId) {
-        const [existing] = await db.select().from(sesiones).where(eq(sesiones.id, sesionId)).limit(1)
-        const datos = { ...(existing?.datos ?? {}) } as Record<string, unknown>
-        datos.arca = { jurisdiccion, count: filas.length, filas }
-        const estado = datos.arca && datos.tango ? "completado" : "activo"
-        await db.update(sesiones).set({ datos, estado, updatedAt: now }).where(eq(sesiones.id, sesionId))
-      }
+      await db.transaction(async (tx) => {
+        await tx.insert(retencionesArca).values(filas.map(f => ({
+          id: crypto.randomUUID(), loteId, jurisdiccion,
+          cuitAgente: f.cuitAgente, fechaRetencion: f.fechaRetencion,
+          tipo: f.tipo, letra: f.letra, nroComprobante: f.nroComprobante,
+          nroComprOrigen: f.nroComprOrigen, importe: f.importe, creadoEn: now,
+        })))
+        if (sesionId) {
+          const [existing] = await tx.select().from(sesiones).where(eq(sesiones.id, sesionId)).for("update").limit(1)
+          const datos = { ...(existing?.datos ?? {}) } as Record<string, unknown>
+          datos.arca = { jurisdiccion, count: filas.length, filas }
+          const estado = datos.arca && datos.tango ? "completado" : "activo"
+          await tx.update(sesiones).set({ datos, estado, updatedAt: now }).where(eq(sesiones.id, sesionId))
+        }
+      })
       return NextResponse.json({ tipo: "arca", jurisdiccion, count: filas.length, filas })
     }
   } catch (err) {

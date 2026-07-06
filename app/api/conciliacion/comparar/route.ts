@@ -3,10 +3,11 @@ import { z } from "zod"
 import { sessionExists } from "@/lib/sessions/manager"
 import { conciliar } from "@/lib/conciliacion/matching"
 import { upsertConciliacion, getConciliacion } from "@/lib/conciliacion/registry"
+import { reemplazarMatchesYDiscrepancias } from "@/lib/conciliacion/persist"
 import { getPartidas } from "@/lib/partidas/manager"
 import { generateJSONOpenAI } from "@/lib/ai/client"
 import { db } from "@/lib/db"
-import { movimientos as movimientosTable, asientos as asientosTable, matches as matchesTable, discrepancias as discrepanciasTable } from "@/lib/db/schema"
+import { movimientos as movimientosTable, asientos as asientosTable } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import type { Movimiento, Asiento, Match, Discrepancia } from "@/lib/types"
 
@@ -67,7 +68,6 @@ export async function POST(req: NextRequest) {
 
     // ── FASE 2: LLM para items sin match ─────────────────────────────────
     const probableMatches: Match[] = []
-    const llmDiscrepancias = { banco: unmatchedMovimientos, tango: unmatchedAsientos }
 
     if (unmatchedMovimientos.length > 0 && unmatchedAsientos.length > 0) {
       try {
@@ -119,33 +119,8 @@ Para cada movimiento bancario, buscá el asiento de Tango que probablemente sea 
 
     const allMatches = [...fase1.matches, ...probableMatches]
 
-    // ── Persist ───────────────────────────────────────────────────────────
-    await db.delete(matchesTable).where(eq(matchesTable.conciliacionId, sessionId))
-    await db.delete(discrepanciasTable).where(eq(discrepanciasTable.conciliacionId, sessionId))
-
-    if (allMatches.length > 0) {
-      await db.insert(matchesTable).values(allMatches.map(m => ({
-        conciliacionId: sessionId,
-        movimientoId: m.movimientoId,
-        asientoId: m.asientoId,
-        score: m.score,
-        motivo: m.motivo,
-        tipo: m.tipo,
-        diferenciaMonto: m.diferenciaMonto ?? null,
-        explicacion: m.explicacion ?? null,
-      })))
-    }
-    if (discrepancias.length > 0) {
-      await db.insert(discrepanciasTable).values(discrepancias.map(d => ({
-        conciliacionId: sessionId,
-        tipo: d.tipo,
-        fecha: d.fecha,
-        descripcion: d.descripcion,
-        monto: d.monto,
-        movimientoId: d.movimientoId ?? null,
-        asientoId: d.asientoId ?? null,
-      })))
-    }
+    // ── Persist (atómico) ─────────────────────────────────────────────────
+    await reemplazarMatchesYDiscrepancias(sessionId, allMatches, discrepancias)
 
     // Use fase1 result for financial formula (includes all matches in formula logic)
     const resultado = {
