@@ -5,17 +5,13 @@
  * Conserva: tarjetas_maestras, resumen_tarjetas, lineas_tarjeta.
  * Vacía el resto. DESTRUCTIVO e irreversible.
  */
-import { sql } from "drizzle-orm"
+import { sql, getTableName } from "drizzle-orm"
 import { db } from "@/lib/db"
+import { RESET_TABLES } from "@/lib/db/reset-tables"
 
 process.loadEnvFile(".env.local")
 
-const TRUNCATE = [
-  "conciliaciones", "movimientos", "asientos", "matches", "discrepancias",
-  "saldos_banco", "partidas",
-  "retenciones_arca", "retenciones_tango",
-  "sesiones", "uso_api", "retenciones",
-]
+const TRUNCATE = RESET_TABLES.map(getTableName)
 
 async function main() {
   await db.execute(sql.raw(`TRUNCATE ${TRUNCATE.join(", ")} RESTART IDENTITY CASCADE`))

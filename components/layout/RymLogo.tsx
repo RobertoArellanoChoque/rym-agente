@@ -1,4 +1,4 @@
-export function RymLogo({ className }: { className?: string }) {
+export function RymLogo({ className, textColor = "var(--foreground)" }: { className?: string; textColor?: string }) {
   return (
     <svg
       viewBox="0 0 220 40"
@@ -6,6 +6,7 @@ export function RymLogo({ className }: { className?: string }) {
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       aria-label="Recuperos y Mandatos"
+      style={{ color: "var(--primary)" }}
     >
       {/* "recuperos" text */}
       <text
@@ -14,7 +15,7 @@ export function RymLogo({ className }: { className?: string }) {
         fontFamily="Cabinet Grotesk, Inter, system-ui, sans-serif"
         fontWeight="700"
         fontSize="18"
-        fill="#F3F4F6"
+        fill={textColor}
         letterSpacing="-0.3"
       >
         recuperos
@@ -25,7 +26,7 @@ export function RymLogo({ className }: { className?: string }) {
         {/* V-check stroke */}
         <path
           d="M2 12 L8 20 L20 2"
-          stroke="#E52713"
+          stroke="currentColor"
           strokeWidth="3"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -36,7 +37,7 @@ export function RymLogo({ className }: { className?: string }) {
           y1="26"
           x2="14"
           y2="26"
-          stroke="#E52713"
+          stroke="currentColor"
           strokeWidth="2.5"
           strokeLinecap="round"
         />
@@ -49,7 +50,7 @@ export function RymLogo({ className }: { className?: string }) {
         fontFamily="Cabinet Grotesk, Inter, system-ui, sans-serif"
         fontWeight="700"
         fontSize="18"
-        fill="#F3F4F6"
+        fill={textColor}
         letterSpacing="-0.3"
       >
         mandatos

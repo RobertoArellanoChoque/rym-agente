@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { procesarExtractoTarjeta } from "@/lib/tarjetas/extractor"
 import { matchTarjeta } from "@/lib/tarjetas/matcher"
 import { toCentavos, MAX_UPLOAD_BYTES } from "@/lib/utils"
+import { rateLimit, ipOf } from "@/lib/rate-limit"
 
 export async function POST(req: NextRequest) {
+  if (!(await rateLimit(`upload:${ipOf(req)}`, 10, 60_000)))
+    return NextResponse.json({ error: "Demasiadas solicitudes, esperá un momento" }, { status: 429 })
   try {
     // Las tarjetas maestras viven en Supabase (sembrar con `npm run db:seed`).
     const form = await req.formData()

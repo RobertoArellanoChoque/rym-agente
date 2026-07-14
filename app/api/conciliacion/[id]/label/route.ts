@@ -10,8 +10,12 @@ export async function PATCH(
   const label = typeof body.label === "string" ? body.label.trim() : null
 
   if (!label) return NextResponse.json({ error: "label requerido" }, { status: 400 })
-  if (!(await getConciliacion(id))) return NextResponse.json({ error: "No encontrado" }, { status: 404 })
-
-  await upsertConciliacion(id, { label })
-  return NextResponse.json({ ok: true, label })
+  try {
+    if (!(await getConciliacion(id))) return NextResponse.json({ error: "No encontrado" }, { status: 404 })
+    await upsertConciliacion(id, { label })
+    return NextResponse.json({ ok: true, label })
+  } catch (e) {
+    console.error("[PATCH /api/conciliacion/:id/label]", e)
+    return NextResponse.json({ error: "Error interno" }, { status: 500 })
+  }
 }

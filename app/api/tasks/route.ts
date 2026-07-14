@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { conciliaciones, resumenTarjetas, sesiones } from "@/lib/db/schema"
-import { desc, eq } from "drizzle-orm"
+import { desc, eq, ne } from "drizzle-orm"
 import { approveConciliacion } from "@/lib/conciliacion/approve"
 
 export async function GET() {
@@ -15,7 +15,7 @@ export async function GET() {
         diferencia: conciliaciones.diferencia,
         movimientosCount: conciliaciones.movimientosCount,
         updatedAt: conciliaciones.updatedAt,
-      }).from(conciliaciones).orderBy(desc(conciliaciones.updatedAt)),
+      }).from(conciliaciones).where(ne(conciliaciones.stage, "aprobada")).orderBy(desc(conciliaciones.updatedAt)).limit(20),
 
       db.select({
         id: resumenTarjetas.id,
@@ -30,14 +30,14 @@ export async function GET() {
         label: sesiones.label,
         estado: sesiones.estado,
         updatedAt: sesiones.updatedAt,
-      }).from(sesiones).where(eq(sesiones.modulo, "ventas")).orderBy(desc(sesiones.updatedAt)),
+      }).from(sesiones).where(eq(sesiones.modulo, "ventas")).orderBy(desc(sesiones.updatedAt)).limit(20),
 
       db.select({
         id: sesiones.id,
         label: sesiones.label,
         estado: sesiones.estado,
         updatedAt: sesiones.updatedAt,
-      }).from(sesiones).where(eq(sesiones.modulo, "contabilidad")).orderBy(desc(sesiones.updatedAt)),
+      }).from(sesiones).where(eq(sesiones.modulo, "contabilidad")).orderBy(desc(sesiones.updatedAt)).limit(20),
     ])
 
     return NextResponse.json({ conciliaciones: concs, tarjetas, ventasSesiones, contabilidadSesiones })

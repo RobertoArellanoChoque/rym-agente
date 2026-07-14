@@ -1,6 +1,7 @@
 import { db } from "@/lib/db"
 import { partidas as partidasTable } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
+import { currentUserId } from "@/lib/auth/current-user"
 
 export type Partida = {
   id: string
@@ -20,6 +21,7 @@ export async function getPartidas(bankId: string): Promise<Partida[]> {
 }
 
 export async function setPartidas(bankId: string, items: Partida[]): Promise<void> {
+  const userId = await currentUserId()
   await db.transaction(async (tx) => {
     await tx.delete(partidasTable).where(eq(partidasTable.bancoId, bankId))
     if (items.length > 0) {
@@ -29,6 +31,7 @@ export async function setPartidas(bankId: string, items: Partida[]): Promise<voi
         descripcion: p.descripcion,
         monto: p.monto,
         fecha: p.fecha,
+        createdBy: userId,
       })))
     }
   })

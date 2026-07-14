@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
-import crypto from "crypto"
 import { db } from "@/lib/db"
-import { resumenTarjetas, lineasTarjeta } from "@/lib/db/schema"
+import { resumenTarjetas } from "@/lib/db/schema"
 import { procesarExtractoTarjeta } from "@/lib/tarjetas/extractor"
-import { desc } from "drizzle-orm"
-import { toCentavos, MAX_UPLOAD_BYTES } from "@/lib/utils"
+import { persistTarjeta } from "@/lib/tarjetas/persist"
+import { desc, eq } from "drizzle-orm"
+import { MAX_UPLOAD_BYTES } from "@/lib/utils"
+import { currentUserId } from "@/lib/auth/current-user"
+import { rateLimit, ipOf } from "@/lib/rate-limit"
 
 interface RawLinea {
   cuenta: string
@@ -15,6 +17,8 @@ interface RawLinea {
 }
 
 export async function POST(req: NextRequest) {
+  if (!(await rateLimit(`upload:${ipOf(req)}`, 10, 60_000)))
+    return NextResponse.json({ error: "Demasiadas solicitudes, esperá un momento" }, { status: 429 })
   try {
     const contentType = req.headers.get("content-type") ?? ""
 
@@ -31,29 +35,25 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Sin líneas para importar" }, { status: 400 })
       }
 
-      const now = new Date().toISOString()
-      const resumenId = crypto.randomUUID()
-      const totalMonto = body.rawLineas.reduce((s, l) => s + l.monto, 0)
-
-      await db.insert(resumenTarjetas).values({
-        id: resumenId,
+      const { resumenId, totalMonto } = await persistTarjeta({
         nombreTarjeta: body.nombreTarjeta,
         periodo: body.periodo,
-        totalMonto,
-        tarjetaMaestraId: body.tarjetaMaestraId ?? null,
-        creadoEn: now,
-      })
+        // rawLineas.monto ya viene en centavos (ver RawLinea); persistTarjeta
+        // vuelve a aplicar toCentavos, así que se pasa el valor en pesos decimal.
+        lineas: body.rawLineas.map(l => ({
+          cuenta: l.cuenta,
+          descripcion: l.descripcion,
+          monto: l.monto / 100,
+          periodo: l.periodo,
+          tipoLinea: l.tipoLinea === "cargo" ? "impuesto" : l.tipoLinea,
+        })),
+      }, await currentUserId())
 
-      await db.insert(lineasTarjeta).values(body.rawLineas.map(l => ({
-        id: crypto.randomUUID(),
-        resumenId,
-        cuenta: l.cuenta,
-        descripcion: l.descripcion,
-        monto: l.monto,
-        periodo: l.periodo,
-        estado: l.monto > 0 ? "OK" : "",
-        tipoLinea: l.tipoLinea,
-      })))
+      if (body.tarjetaMaestraId) {
+        await db.update(resumenTarjetas)
+          .set({ tarjetaMaestraId: body.tarjetaMaestraId })
+          .where(eq(resumenTarjetas.id, resumenId))
+      }
 
       return NextResponse.json({ id: resumenId, nombreTarjeta: body.nombreTarjeta, periodo: body.periodo, totalMonto })
     }
@@ -87,31 +87,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { result } = extraction
-    const now = new Date().toISOString()
-    const resumenId = crypto.randomUUID()
-    const totalMonto = result.lineas.reduce((acc, l) => acc + toCentavos(l.monto), 0)
-
-    await db.insert(resumenTarjetas).values({
-      id: resumenId,
-      nombreTarjeta: result.nombreTarjeta,
-      periodo: result.periodo,
-      totalMonto,
-      tarjetaMaestraId: null,
-      creadoEn: now,
-    })
-
-    if (result.lineas.length > 0) {
-      await db.insert(lineasTarjeta).values(result.lineas.map(l => ({
-        id: crypto.randomUUID(),
-        resumenId,
-        cuenta: l.cuenta,
-        descripcion: l.descripcion,
-        monto: toCentavos(l.monto),
-        periodo: l.periodo || result.periodo,
-        estado: l.monto > 0 ? "OK" : "",
-        tipoLinea: l.tipoLinea,
-      })))
-    }
+    const { resumenId, totalMonto } = await persistTarjeta(result, await currentUserId())
 
     return NextResponse.json({
       id: resumenId,

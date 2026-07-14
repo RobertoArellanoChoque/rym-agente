@@ -3,14 +3,14 @@ import { pdfToMarkdown } from "@/lib/extractos/mistral-ocr"
 import { extractRawText } from "@/lib/extractos/raw-text"
 import { classifyText, type FileClassification } from "@/lib/orchestrator/classifier"
 import { procesarExtractoTarjeta } from "@/lib/tarjetas/extractor"
+import { persistTarjeta } from "@/lib/tarjetas/persist"
 import { procesarComprobantePago, type PagoResult } from "@/lib/ventas/extractor"
+import { persistPago } from "@/lib/ventas/persist"
 import { createSession } from "@/lib/sessions/manager"
 import { MAX_UPLOAD_BYTES } from "@/lib/utils"
 import { centavosAString } from "@/lib/conciliacion/matching"
-import { db } from "@/lib/db"
-import { resumenTarjetas, lineasTarjeta, retenciones } from "@/lib/db/schema"
-import { toCentavos } from "@/lib/utils"
-import crypto from "crypto"
+import { currentUserId } from "@/lib/auth/current-user"
+import { rateLimit, ipOf } from "@/lib/rate-limit"
 
 interface OrchestratorResult {
   classification: FileClassification
@@ -42,29 +42,7 @@ function buildTangoSummary(sessionId?: string): OrchestratorResult {
 
 async function handleTarjeta(buffer: ArrayBuffer): Promise<OrchestratorResult> {
   const { result } = await procesarExtractoTarjeta(buffer)
-  const now = new Date().toISOString()
-  const resumenId = crypto.randomUUID()
-  const totalMonto = result.lineas.reduce((acc, l) => acc + toCentavos(l.monto), 0)
-
-  await db.insert(resumenTarjetas).values({
-    id: resumenId,
-    nombreTarjeta: result.nombreTarjeta,
-    periodo: result.periodo,
-    totalMonto,
-    creadoEn: now,
-  })
-
-  if (result.lineas.length > 0) {
-    await db.insert(lineasTarjeta).values(result.lineas.map(l => ({
-      id: crypto.randomUUID(),
-      resumenId,
-      cuenta: l.cuenta,
-      descripcion: l.descripcion,
-      monto: toCentavos(l.monto),
-      periodo: l.periodo || result.periodo,
-      estado: l.monto > 0 ? "OK" : "",
-    })))
-  }
+  const { resumenId, totalMonto } = await persistTarjeta(result, await currentUserId())
 
   return {
     classification: { type: "tarjeta", confidence: "high", suggestedModule: "proveedores", metadata: {} },
@@ -80,19 +58,7 @@ async function handlePago(buffer: ArrayBuffer): Promise<OrchestratorResult> {
   const totalRetenciones = pago.retenciones.reduce((s, r) => s + r.monto, 0)
   const tiposRet = pago.retenciones.map((r) => r.tipo).join(", ")
 
-  const retencionId = crypto.randomUUID()
-  await db.insert(retenciones).values({
-    id: retencionId,
-    empresa: pago.empresa,
-    cuit: pago.cuit ?? "",
-    fechaPago: pago.fechaPago,
-    concepto: pago.concepto ?? "",
-    nroComprobante: pago.nroComprobante ?? "",
-    montoBruto: pago.montoBruto,
-    montoNeto: pago.montoNeto,
-    retencionesJson: pago.retenciones,
-    creadoEn: new Date().toISOString(),
-  })
+  const retencionId = await persistPago(pago, await currentUserId())
 
   return {
     classification: { type: "pago_retencion", confidence: "high", suggestedModule: "ventas", metadata: {} },
@@ -102,6 +68,8 @@ async function handlePago(buffer: ArrayBuffer): Promise<OrchestratorResult> {
 }
 
 export async function POST(req: NextRequest) {
+  if (!(await rateLimit(`upload:${ipOf(req)}`, 10, 60_000)))
+    return NextResponse.json({ error: "Demasiadas solicitudes, esperá un momento" }, { status: 429 })
   try {
     const form = await req.formData()
     const file = form.get("file") as File | null

@@ -3,6 +3,9 @@ import { matches as matchesTable, discrepancias as discrepanciasTable } from "@/
 import { eq } from "drizzle-orm"
 import type { Match, Discrepancia } from "@/lib/types"
 
+// Handle de transacción drizzle (para encadenar esta operación en una txn externa).
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
 /**
  * Reemplaza matches + discrepancias de una conciliación de forma ATÓMICA.
  * Delete+insert de ambas tablas en una sola transacción: si algo falla, no
@@ -14,9 +17,11 @@ import type { Match, Discrepancia } from "@/lib/types"
 export async function reemplazarMatchesYDiscrepancias(
   sessionId: string,
   matchesList: Match[],
-  discrepanciasList: Discrepancia[]
+  discrepanciasList: Discrepancia[],
+  exec?: Tx
 ): Promise<void> {
-  await db.transaction(async (tx) => {
+  // Si ya estamos dentro de una txn (exec), corremos ahí; si no, abrimos una propia.
+  const run = async (tx: Tx) => {
     await tx.delete(matchesTable).where(eq(matchesTable.conciliacionId, sessionId))
     await tx.delete(discrepanciasTable).where(eq(discrepanciasTable.conciliacionId, sessionId))
 
@@ -44,5 +49,7 @@ export async function reemplazarMatchesYDiscrepancias(
         asientoId: d.asientoId ?? null,
       })))
     }
-  })
+  }
+  if (exec) await run(exec)
+  else await db.transaction(run)
 }

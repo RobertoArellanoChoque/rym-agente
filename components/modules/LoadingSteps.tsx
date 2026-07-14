@@ -1,6 +1,6 @@
 "use client"
 
-import { CheckCircle2, Loader2 } from "lucide-react"
+import { CheckCircle2, Loader2, Circle } from "lucide-react"
 
 export type StepStatus = "pending" | "active" | "done"
 
@@ -11,15 +11,17 @@ export interface LoadingStep {
 
 export function LoadingSteps({ steps }: { steps: LoadingStep[] }) {
   return (
-    <div className="space-y-3 py-1">
+    <div className="space-y-2">
       {steps.map((step, i) => (
-        <div key={i} className="flex items-center gap-3 text-sm">
-          {step.status === "done" ? (
+        <div key={i} className="flex items-center gap-2.5 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
+          {step.status === "done" && (
             <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-          ) : step.status === "active" ? (
-            <Loader2 className="h-4 w-4 text-primary animate-spin shrink-0" />
-          ) : (
-            <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/25 shrink-0" />
+          )}
+          {step.status === "active" && (
+            <Loader2 className="h-4 w-4 text-amber-500 animate-spin shrink-0" />
+          )}
+          {step.status === "pending" && (
+            <Circle className="h-4 w-4 text-muted-foreground/40 shrink-0" />
           )}
           <span
             className={
@@ -27,7 +29,7 @@ export function LoadingSteps({ steps }: { steps: LoadingStep[] }) {
                 ? "text-muted-foreground"
                 : step.status === "active"
                 ? "text-foreground font-medium"
-                : "text-muted-foreground/35"
+                : "text-muted-foreground"
             }
           >
             {step.label}

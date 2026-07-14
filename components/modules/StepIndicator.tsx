@@ -9,6 +9,7 @@ const STAGE_IDX: Record<ConcStage, number> = {
   "banco-done": 1,
   "tango-done": 2,
   "done": 3,
+  "aprobada": 3,
 }
 
 interface StepIndicatorProps {

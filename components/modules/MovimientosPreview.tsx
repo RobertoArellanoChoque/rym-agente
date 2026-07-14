@@ -12,6 +12,8 @@ const CATEGORIA_LABEL: Record<Categoria, string> = {
   transferencia: "Transf.",
   cheque: "Cheque",
   comision: "Comisión",
+  prestamo: "Préstamo",
+  prestamo_iva: "IVA préstamo",
   otro: "Otro",
 }
 
@@ -21,6 +23,8 @@ const CATEGORIA_CLASS: Record<Categoria, string> = {
   transferencia: "bg-blue-100 text-blue-700 border-blue-200",
   cheque: "bg-purple-100 text-purple-700 border-purple-200",
   comision: "bg-slate-100 text-slate-600 border-slate-200",
+  prestamo: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  prestamo_iva: "bg-teal-100 text-teal-700 border-teal-200",
   otro: "bg-gray-100 text-gray-500 border-gray-200",
 }
 

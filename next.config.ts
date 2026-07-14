@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
-  serverExternalPackages: ["exceljs", "unpdf", "@mistralai/mistralai"],
+  serverExternalPackages: ["exceljs", "unpdf", "@mistralai/mistralai", "googleapis"],
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }]
   },

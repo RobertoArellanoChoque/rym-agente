@@ -4,6 +4,7 @@ import { z } from "zod"
 import { db } from "@/lib/db"
 import { tarjetasMaestras } from "@/lib/db/schema"
 import { asc } from "drizzle-orm"
+import { currentUserId } from "@/lib/auth/current-user"
 
 // drizzle envuelve el error de postgres; el code de PG queda en .cause
 function isUniqueViolation(e: unknown): boolean {
@@ -30,7 +31,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Datos inválidos (nombre, banco, tipo: VISA|MASTERCARD|AMEX)" }, { status: 400 })
   }
   const { nombre, banco, tipo, activa } = parsed.data
-  const row = { id: crypto.randomUUID(), nombre, banco, tipo, activa: activa === false ? 0 : 1 }
+  const userId = await currentUserId()
+  const row = { id: crypto.randomUUID(), nombre, banco, tipo, activa: activa !== false, createdBy: userId, updatedBy: userId }
   try {
     await db.insert(tarjetasMaestras).values(row)
   } catch (e: unknown) {

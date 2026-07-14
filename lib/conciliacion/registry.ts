@@ -2,6 +2,8 @@ import { db } from "@/lib/db"
 import { conciliaciones } from "@/lib/db/schema"
 import { eq, desc } from "drizzle-orm"
 import type { ConcStage } from "@/lib/types"
+import type { Tx } from "@/lib/conciliacion/persist"
+import { currentUserId } from "@/lib/auth/current-user"
 
 export type ConciliacionEntry = {
   id: string
@@ -12,6 +14,7 @@ export type ConciliacionEntry = {
   bankId?: string
   bankName?: string
   confidence?: "high" | "low"
+  periodo?: string // "YYYY-MM"
   saldoAnterior?: number
   saldoFinal?: number
   movimientosCount?: number
@@ -31,6 +34,7 @@ function rowToEntry(row: typeof conciliaciones.$inferSelect): ConciliacionEntry 
     bankId: row.bancoId ?? undefined,
     bankName: row.bancoNombre ?? undefined,
     confidence: (row.bancoConfidence as "high" | "low") ?? undefined,
+    periodo: row.periodo ?? undefined,
     saldoAnterior: row.saldoAnterior ?? undefined,
     saldoFinal: row.saldoFinal ?? undefined,
     movimientosCount: row.movimientosCount ?? undefined,
@@ -53,14 +57,18 @@ export async function getConciliacion(id: string): Promise<ConciliacionEntry | n
 
 export async function upsertConciliacion(
   id: string,
-  patch: Partial<Omit<ConciliacionEntry, "id" | "updatedAt">>
+  patch: Partial<Omit<ConciliacionEntry, "id" | "updatedAt">>,
+  exec: Tx | typeof db = db
 ): Promise<void> {
   const now = new Date().toISOString()
+  const userId = await currentUserId()
 
   const values = {
+    updatedBy: userId, // último editor (se aplica también en onConflictDoUpdate.set)
     bancoId: patch.bankId,
     bancoNombre: patch.bankName,
     bancoConfidence: patch.confidence,
+    periodo: patch.periodo,
     saldoAnterior: patch.saldoAnterior,
     saldoFinal: patch.saldoFinal,
     movimientosCount: patch.movimientosCount,
@@ -73,12 +81,13 @@ export async function upsertConciliacion(
     ...(patch.label && { label: patch.label }),
   }
 
-  await db.insert(conciliaciones)
+  await exec.insert(conciliaciones)
     .values({
       id,
       label: patch.label ?? `Conciliación ${new Date().toLocaleDateString("es-AR")}`,
       stage: patch.stage ?? "new",
       createdAt: now,
+      createdBy: userId,
       ...values,
     })
     .onConflictDoUpdate({ target: conciliaciones.id, set: values })

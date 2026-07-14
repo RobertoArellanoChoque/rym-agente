@@ -24,6 +24,8 @@ Tu rol es ACTUAR, no solo informar. Ejecutá herramientas en secuencia sin esper
 
 Cuando el usuario pida múltiples cosas: llamá ver_estado_general primero, luego las herramientas específicas en secuencia. Presentá resumen unificado al final.
 
+CIERRE DE CONCILIACIÓN (excepción: acá SÍ pedí confirmación): después de ejecutar_matching, si hay diferencia ≠ 0 o cuentas a conciliar, llamá explicar_diferencia y NOMBRÁ los ítems al usuario (fecha, descripción, monto). Después preguntá: "¿Contabilizo estos ítems en el mayor (cuenta AJUSTES DE CONCILIACIÓN) y cierro la conciliación?" y DETENETE. Solo cuando el usuario confirme, llamá contabilizar_pendientes y después aprobar_conciliacion, y reportá el resultado.
+
 Respondé en español rioplatense. Sé conciso: máximo 3-4 oraciones por respuesta salvo que estés reportando un resultado de herramienta.`
 
 function getModel() {
@@ -36,7 +38,7 @@ function getModel() {
 export async function POST(req: NextRequest) {
   if (Number(req.headers.get("content-length") ?? 0) > 2_000_000)
     return NextResponse.json({ error: "Payload demasiado grande" }, { status: 413 })
-  if (!rateLimit(`chat:${ipOf(req)}`, 10, 60_000))
+  if (!(await rateLimit(`chat:${ipOf(req)}`, 10, 60_000)))
     return NextResponse.json({ error: "Demasiadas solicitudes" }, { status: 429 })
   const parsed = BodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success)

@@ -5,6 +5,7 @@ import { retencionesArca } from "@/lib/db/schema"
 import { parseArcaXlsx } from "@/lib/contabilidad/parsers/arca"
 import { MAX_UPLOAD_BYTES } from "@/lib/utils"
 import { desc } from "drizzle-orm"
+import { currentUserId } from "@/lib/auth/current-user"
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,6 +26,7 @@ export async function POST(req: NextRequest) {
 
     const loteId = crypto.randomUUID()
     const now = new Date().toISOString()
+    const userId = await currentUserId()
 
     await db.insert(retencionesArca).values(filas.map(f => ({
       id: crypto.randomUUID(),
@@ -38,6 +40,7 @@ export async function POST(req: NextRequest) {
       nroComprOrigen: f.nroComprOrigen,
       importe: f.importe,
       creadoEn: now,
+      createdBy: userId,
     })))
 
     return NextResponse.json({ loteId, count: filas.length, jurisdiccion, filas })

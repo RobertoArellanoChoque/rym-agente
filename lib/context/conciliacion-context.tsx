@@ -104,6 +104,10 @@ export function ConciliacionProvider({ children }: { children: React.ReactNode }
   async function loadState(id: string) {
     try {
       const res = await fetch(`/api/conciliacion/state?sessionId=${id}`)
+      if (!res.ok) {
+        patchConc(id, { loaded: true, error: "No se pudo cargar la conciliación" })
+        return
+      }
       const d = await res.json()
       if (d.expired) {
         patchConc(id, { loaded: true, error: "Sesión expirada — datos no disponibles" })
@@ -124,9 +128,20 @@ export function ConciliacionProvider({ children }: { children: React.ReactNode }
     setActiveId(id)
     setConciliaciones((prev) => {
       const c = prev[id]
-      if (c && !c.loaded && !c.busy) {
+      if (!c) {
+        // No está en el map: race con la carga inicial de /list, list fallida, o conc
+        // creada en otra sesión. Insertar skeleton y cargar su estado por id.
         loadState(id)
+        return {
+          ...prev,
+          [id]: {
+            id, label: "Conciliación", createdAt: new Date().toISOString(),
+            stage: "new", busy: null, stepIndex: -1, stepLabels: [],
+            movimientos: [], asientos: [], loaded: false,
+          },
+        }
       }
+      if (!c.loaded && !c.busy) loadState(id)
       return prev
     })
   }
@@ -321,6 +336,9 @@ export function ConciliacionProvider({ children }: { children: React.ReactNode }
   // Mount: load list + saldos
   useEffect(() => {
     fetchSaldos()
+    // Si la URL ya trae ?id=, respetarlo en vez de activar siempre items[0] —
+    // evita un fetch de state desperdiciado + flash de la conciliación equivocada.
+    const urlId = new URLSearchParams(window.location.search).get("id")
     fetch("/api/conciliacion/list")
       .then((r) => r.json())
       .then((items: ListItem[]) => {
@@ -336,7 +354,7 @@ export function ConciliacionProvider({ children }: { children: React.ReactNode }
           }
         }
         setConciliaciones(map)
-        const first = items[0]?.id ?? null
+        const first = (urlId && map[urlId]) ? urlId : (items[0]?.id ?? null)
         if (first) { setActiveId(first); loadState(first) }
         else nuevaConciliacion()
       })

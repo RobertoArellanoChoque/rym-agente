@@ -1,13 +1,11 @@
+import { ClerkProvider } from "@clerk/nextjs"
+import { esES } from "@clerk/localizations"
+import { shadcn } from "@clerk/themes"
 import type { Metadata } from "next"
 import { Instrument_Sans, Geist_Mono } from "next/font/google"
 import "./globals.css"
-import { IconRail } from "@/components/layout/IconRail"
-import { TasksPanel } from "@/components/layout/TasksPanel"
-import { TooltipProvider } from "@/components/ui/tooltip"
-import { ConciliacionProvider } from "@/lib/context/conciliacion-context"
-import { ChatProvider } from "@/lib/context/chat-context"
-import { VentasProvider } from "@/lib/context/ventas-context"
-import { ContabilidadProvider } from "@/lib/context/contabilidad-context"
+import { AppShell } from "@/components/layout/AppShell"
+import { Toaster } from "@/components/ui/toaster"
 
 const instrumentSans = Instrument_Sans({
   variable: "--font-instrument-sans",
@@ -41,23 +39,18 @@ export default function RootLayout({
           href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500,400&display=swap"
           rel="stylesheet"
         />
+        {/* Sync, antes del paint: evita el flash de tema equivocado (FOUC). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;if(d)document.documentElement.classList.add('dark')}catch(e){}})()`,
+          }}
+        />
       </head>
-      <body className="h-screen overflow-hidden flex bg-background">
-        <ConciliacionProvider>
-          <VentasProvider>
-            <ContabilidadProvider>
-              <ChatProvider>
-                <TooltipProvider>
-                  <IconRail />
-                  <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                    {children}
-                  </main>
-                  <TasksPanel />
-                </TooltipProvider>
-              </ChatProvider>
-            </ContabilidadProvider>
-          </VentasProvider>
-        </ConciliacionProvider>
+      <body className="h-full bg-background">
+        <ClerkProvider appearance={{ theme: shadcn }} localization={esES}>
+          <AppShell>{children}</AppShell>
+          <Toaster />
+        </ClerkProvider>
       </body>
     </html>
   )

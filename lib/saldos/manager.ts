@@ -1,6 +1,7 @@
 import { db } from "@/lib/db"
 import { saldosBanco } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
+import { currentUserId } from "@/lib/auth/current-user"
 
 export type SaldoBanco = {
   bankId: string
@@ -39,6 +40,7 @@ export async function setSaldo(bankId: string, data: Omit<SaldoBanco, "bankId">)
     ultimaFecha: data.ultimaFecha,
     updatedAt: data.updatedAt,
     updatedBy: data.updatedBy,
+    updatedByUser: await currentUserId(), // updatedBy de arriba es flag auto|manual; este es el Clerk userId
     saldoConciliado: data.saldoConciliado,
     fechaConciliacion: data.fechaConciliacion,
   }
@@ -52,5 +54,6 @@ export async function patchSaldo(bankId: string, patch: { saldoConciliado: numbe
     saldoConciliado: patch.saldoConciliado,
     fechaConciliacion: patch.fechaConciliacion,
     updatedAt: new Date().toISOString(),
+    updatedByUser: await currentUserId(),
   }).where(eq(saldosBanco.bancoId, bankId))
 }

@@ -3,7 +3,7 @@ import { usoApi } from "@/lib/db/schema"
 import { calcCosto } from "./pricing"
 
 export function logUso(
-  provider: string,
+  provider: "anthropic" | "mistral" | "openai",
   modelo: string,
   operacion: string,
   tokensIn: number,

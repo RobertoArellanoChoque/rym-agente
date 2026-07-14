@@ -6,7 +6,7 @@ export interface TarjetaMaestraRow {
   nombre: string
   banco: string
   tipo: string
-  activa: number
+  activa: boolean
 }
 
 const BANCO_ALIASES: Record<string, string[]> = {

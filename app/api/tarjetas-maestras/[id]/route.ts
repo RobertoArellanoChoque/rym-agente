@@ -3,6 +3,7 @@ import { z } from "zod"
 import { db } from "@/lib/db"
 import { tarjetasMaestras } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
+import { currentUserId } from "@/lib/auth/current-user"
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -29,8 +30,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (parsed.data.nombre !== undefined) patch.nombre = parsed.data.nombre
   if (parsed.data.banco !== undefined) patch.banco = parsed.data.banco
   if (parsed.data.tipo !== undefined) patch.tipo = parsed.data.tipo
-  if (parsed.data.activa !== undefined) patch.activa = parsed.data.activa ? 1 : 0
+  if (parsed.data.activa !== undefined) patch.activa = parsed.data.activa
   if (Object.keys(patch).length === 0) return NextResponse.json({ error: "Nada para actualizar" }, { status: 400 })
+  patch.updatedBy = await currentUserId()
 
   try {
     const updated = await db.update(tarjetasMaestras).set(patch).where(eq(tarjetasMaestras.id, id)).returning()

@@ -23,8 +23,16 @@ const KW: Array<[BucketImpuesto, string[]]> = [
   ["Retención Ingresos Brutos", ["ret iibb", "ret.iibb", "retencion ingresos brutos", "ret ing.brutos", "ret.ing.brutos", "arba", "dgr", "iibb", "ingr.brutos", "ingresos brutos"]],
   ["Sellos", ["sellos", "imp.sellos", "impuesto de sellos", "sello"]],
   ["SICREP", ["sicrep"]],
-  ["Gastos bancarios", ["comision", "mantenimiento", "cargo", "servicio", "arancel", "gasto"]],
+  ["Gastos bancarios", ["comision", "mantenimiento", "cargo", "costo servicio", "arancel", "gasto"]],
   ["IVA", ["iva", "i.v.a", "valor agregado"]],
+]
+
+// Categorías destino ofrecidas al usuario para recategorizar un ítem a mano.
+// Los 9 buckets de impuesto + los presentacionales (préstamos, operativos, otros).
+export const CATEGORIAS_DESTINO: string[] = [
+  "IVA", "Percepción IVA", "Retención Ingresos Brutos", "Ingresos Brutos CABA",
+  "Sellos", "SICREP", "Impuesto Ley débito", "Impuesto Ley crédito",
+  "Gastos bancarios", "Préstamos", "Operativos", "Otros",
 ]
 
 function normalizar(s: string): string {
@@ -34,7 +42,7 @@ function normalizar(s: string): string {
     .replace(/[̀-ͯ]/g, "")
 }
 
-const KW_LEY = ["ley 25413", "imp.ley", "impuesto ley", "25413", "imp ley", "ley nro", "ley.25413"]
+const KW_LEY = ["ley 25413", "imp.ley", "impuesto ley", "25413", "imp ley", "ley nro", "ley.25413", "imp.db/cr", "db/cr bancarios"]
 
 /**
  * Clasifica una leyenda en uno de los 9 buckets, o null si no es impuesto/gasto.
@@ -68,6 +76,8 @@ const CATEGORIA_LABEL: Record<Categoria, string> = {
   transferencia: "Transferencias",
   cheque: "Cheques",
   comision: "Gastos bancarios",
+  prestamo: "Préstamos",
+  prestamo_iva: "IVA s/préstamos",
   otro: "Otros",
 }
 
@@ -100,6 +110,8 @@ if (process.argv[1] && process.argv[1].endsWith("impuestos.ts")) {
 
   assert(clasificarImpuesto("IVA RG 2408", -100) === "IVA", "IVA")
   assert(clasificarImpuesto("PERC IVA CABA", -50) === "Percepción IVA", "Percepción IVA no debe caer en IVA")
+  assert(clasificarImpuesto("IMP.DB/CR BANCARIOS P/DEBITOS", -30) === "Impuesto Ley débito", "IMP.DB/CR débito (Patagonia)")
+  assert(clasificarImpuesto("IMP.DB/CR BANCARIOS P/CREDITOS", 30) === "Impuesto Ley crédito", "IMP.DB/CR crédito (Patagonia)")
   assert(clasificarImpuesto("IMP LEY 25413 DEBITO", -30) === "Impuesto Ley débito", "Ley débito por keyword")
   assert(clasificarImpuesto("IMP LEY 25413 CREDITO", 30) === "Impuesto Ley crédito", "Ley crédito por keyword")
   assert(clasificarImpuesto("IMPUESTO LEY 25413", -30) === "Impuesto Ley débito", "Ley por signo negativo → débito")

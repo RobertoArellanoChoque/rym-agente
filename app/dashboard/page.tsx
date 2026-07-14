@@ -3,7 +3,7 @@ import { db } from "@/lib/db"
 import { conciliaciones, resumenTarjetas, movimientos, usoApi } from "@/lib/db/schema"
 import { getSaldos } from "@/lib/saldos/manager"
 import { centavosAString } from "@/lib/conciliacion/matching"
-import { sql, ne, eq } from "drizzle-orm"
+import { sql, notInArray } from "drizzle-orm"
 
 // Lee la DB en cada request — no prerenderizar en build
 export const dynamic = "force-dynamic"
@@ -13,7 +13,7 @@ function MetricCard({
   label,
   value,
   sub,
-  color = "#E52713",
+  color = "var(--primary)",
 }: {
   icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>
   label: string
@@ -25,7 +25,7 @@ function MetricCard({
     <div className="rounded-xl border bg-card p-5 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-muted-foreground">{label}</span>
-        <div className="flex items-center justify-center w-8 h-8 rounded-lg" style={{ background: `${color}18` }}>
+        <div className="flex items-center justify-center w-8 h-8 rounded-lg" style={{ background: `color-mix(in oklch, ${color} 12%, transparent)` }}>
           <Icon className="h-4 w-4" style={{ color }} />
         </div>
       </div>
@@ -42,8 +42,8 @@ export default async function DashboardPage() {
   // (cada una es un round-trip a Supabase; en serie pagábamos N×RTT)
   const [
     allConciliaciones,
-    tarjetasCountRows,
-    movimientosCountRows,
+    tarjetasCount,
+    movimientosCount,
     saldos,
     enProceso,
     usoTotalesRows,
@@ -51,13 +51,14 @@ export default async function DashboardPage() {
     usoPorDia,
   ] = await Promise.all([
     db.select().from(conciliaciones),
-    db.select({ count: sql<number>`count(*)::int` }).from(resumenTarjetas),
-    db.select({ count: sql<number>`count(*)::int` }).from(movimientos),
+    db.$count(resumenTarjetas),
+    db.$count(movimientos),
     getSaldos(),
     db.select({
       bancoId: conciliaciones.bancoId,
       label: conciliaciones.label,
-    }).from(conciliaciones).where(ne(conciliaciones.stage, "done")),
+      // "aprobada" es terminal (más que done): no cuenta como en-proceso.
+    }).from(conciliaciones).where(notInArray(conciliaciones.stage, ["done", "aprobada"])),
     db.select({
       tokensIn: sql<number>`COALESCE(SUM(tokens_in), 0)::bigint`.mapWith(Number),
       tokensOut: sql<number>`COALESCE(SUM(tokens_out), 0)::bigint`.mapWith(Number),
@@ -72,21 +73,19 @@ export default async function DashboardPage() {
       costoUsd: sql<number>`COALESCE(SUM(costo_usd), 0)::bigint`.mapWith(Number),
       llamadas: sql<number>`COUNT(*)::int`,
     }).from(usoApi).groupBy(usoApi.provider, usoApi.modelo).orderBy(sql`SUM(costo_usd) DESC`),
-    // ts es texto ISO — se castea a timestamptz para agrupar por día
+    // ts es timestamptz nativo — se agrupa por día
     db.select({
-      dia: sql<string>`DATE(ts::timestamptz)::text`,
+      dia: sql<string>`DATE(ts)::text`,
       costoUsd: sql<number>`COALESCE(SUM(costo_usd), 0)::bigint`.mapWith(Number),
       tokensTotal: sql<number>`COALESCE(SUM(tokens_in + tokens_out), 0)::bigint`.mapWith(Number),
     }).from(usoApi)
-      .where(sql`ts::timestamptz >= now() - interval '6 days'`)
-      .groupBy(sql`DATE(ts::timestamptz)`)
-      .orderBy(sql`DATE(ts::timestamptz)`),
+      .where(sql`ts >= now() - interval '6 days'`)
+      .groupBy(sql`DATE(ts)`)
+      .orderBy(sql`DATE(ts)`),
   ])
 
-  const doneConciliaciones = allConciliaciones.filter(c => c.stage === "done")
+  const doneConciliaciones = allConciliaciones.filter(c => c.stage === "done" || c.stage === "aprobada")
   const lastConc = [...allConciliaciones].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
-  const tarjetasCount = tarjetasCountRows[0]?.count ?? 0
-  const movimientosCount = movimientosCountRows[0]?.count ?? 0
   const bancosConSaldo = Object.values(saldos)
   const totalSaldos = bancosConSaldo.reduce((s, b) => s + b.ultimoSaldo, 0)
 
@@ -108,8 +107,8 @@ export default async function DashboardPage() {
       {/* Header */}
       <div className="px-6 py-5 border-b bg-card">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0" style={{ background: "rgba(229,39,19,0.1)" }}>
-            <LayoutDashboard className="h-4 w-4" style={{ color: "#E52713" }} />
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0" style={{ background: "color-mix(in oklch, var(--primary) 10%, transparent)" }}>
+            <LayoutDashboard className="h-4 w-4" style={{ color: "var(--primary)" }} />
           </div>
           <div>
             <h1 className="text-lg font-bold">Dashboard</h1>
@@ -129,42 +128,42 @@ export default async function DashboardPage() {
               label="Conciliaciones totales"
               value={String(allConciliaciones.length)}
               sub={`${doneConciliaciones.length} completadas`}
-              color="#E52713"
+              color="var(--chart-1)"
             />
             <MetricCard
               icon={TrendingUp}
               label="Movimientos procesados"
               value={movimientosCount.toLocaleString("es-AR")}
               sub="extractos bancarios"
-              color="#0369A1"
+              color="var(--chart-4)"
             />
             <MetricCard
               icon={CreditCard}
               label="Resúmenes de tarjeta"
               value={String(tarjetasCount)}
               sub="procesados por el agente"
-              color="#7C3AED"
+              color="var(--chart-5)"
             />
             <MetricCard
               icon={Building2}
               label="Saldo total en bancos"
               value={bancosConSaldo.length > 0 ? centavosAString(totalSaldos) : "—"}
               sub={`${bancosConSaldo.length} bancos registrados`}
-              color="#059669"
+              color="var(--chart-2)"
             />
             <MetricCard
               icon={Receipt}
               label="Diferencia promedio"
               value={doneConciliaciones.length > 0 ? centavosAString(Math.round(difPromedio)) : "—"}
               sub="en conciliaciones cerradas"
-              color="#D97706"
+              color="var(--chart-3)"
             />
             <MetricCard
               icon={ArrowLeftRight}
               label="Último banco conciliado"
               value={lastConc?.bancoNombre ?? "—"}
               sub={lastConc ? new Date(lastConc.createdAt).toLocaleDateString("es-AR") : "Sin actividad aún"}
-              color="#E52713"
+              color="var(--chart-1)"
             />
           </div>
 

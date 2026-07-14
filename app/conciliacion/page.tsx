@@ -12,8 +12,10 @@ import { MovimientosPreview } from "@/components/modules/MovimientosPreview"
 import { AsientosPreview } from "@/components/modules/AsientosPreview"
 import { PartidasEditor } from "@/components/modules/PartidasEditor"
 import { ResultTable } from "@/components/modules/ResultTable"
+import { DiferidosPanel } from "@/components/modules/DiferidosPanel"
 import { LoadingSteps, buildSteps } from "@/components/modules/LoadingSteps"
 import { centavosAString } from "@/lib/conciliacion/matching"
+import { periodoDeFechas } from "@/lib/conciliacion/periodo"
 import { useConciliacion } from "@/lib/context/conciliacion-context"
 
 function ConciliacionContent() {
@@ -27,13 +29,17 @@ function ConciliacionContent() {
 
   // Sync URL param → active conciliation
   useEffect(() => {
-    if (urlId && urlId !== activeId && conciliaciones[urlId]) {
+    if (urlId && urlId !== activeId) {
       selectConciliacion(urlId)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlId])
 
   const active = activeId ? conciliaciones[activeId] : null
+  // Período del extracto recién cargado (misma lógica que el backend: moda de las fechas).
+  const periodo = active && active.movimientos.length > 0
+    ? periodoDeFechas(active.movimientos.map(m => m.fecha))
+    : undefined
 
   return (
     <div className="flex flex-col flex-1 min-h-0 px-8 py-8 overflow-auto">
@@ -149,6 +155,9 @@ function ConciliacionContent() {
                   saldoAnterior={active.saldoAnterior}
                   saldoFinal={active.saldoFinal}
                 />
+                {periodo && (
+                  <DiferidosPanel bankId={active.bank.bankId} periodo={periodo} movimientos={active.movimientos} />
+                )}
                 <div className="flex items-center gap-3">
                   <Button onClick={() => patchConc(active.id, { wantsTango: true })}>
                     Continuar → Cargar Mayor Tango

@@ -1,13 +1,22 @@
-import { NextResponse, type NextRequest } from "next/server"
-import { verifyAuthCookie, COOKIE_NAME } from "@/lib/auth"
+import { clerkMiddleware } from "@clerk/nextjs/server"
+import { NextResponse } from "next/server"
 
-export function proxy(request: NextRequest) {
-  if (verifyAuthCookie(request.cookies.get(COOKIE_NAME)?.value)) return NextResponse.next()
-  if (request.nextUrl.pathname.startsWith("/api/"))
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 })
-  return NextResponse.redirect(new URL("/login", request.url))
-}
+export default clerkMiddleware(async (auth, req) => {
+  if (req.nextUrl.pathname.startsWith("/sign-in")) return
+  if (req.nextUrl.pathname === "/api/health") return // health check público para Seenode
+  if (req.nextUrl.pathname === "/api/drive/webhook") return // push notifications de Google Drive — verificación propia por secret compartido, no Clerk
+  const { isAuthenticated, redirectToSignIn } = await auth()
+  if (!isAuthenticated) {
+    if (req.nextUrl.pathname.startsWith("/api"))
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+    return redirectToSignIn({ returnBackUrl: req.url })
+  }
+})
 
 export const config = {
-  matcher: ["/((?!login|api/login|_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/(api|trpc)(.*)",
+    "/__clerk/:path*",
+  ],
 }

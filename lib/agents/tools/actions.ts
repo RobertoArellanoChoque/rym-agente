@@ -1,15 +1,18 @@
 import { tool } from "ai"
 import { z } from "zod"
 import { db } from "@/lib/db"
-import { conciliaciones, movimientos as movimientosTable, asientos as asientosTable, discrepancias } from "@/lib/db/schema"
+import { conciliaciones, asientos as asientosTable, discrepancias } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import { conciliar } from "@/lib/conciliacion/matching"
 import { upsertConciliacion, getConciliacion } from "@/lib/conciliacion/registry"
 import { reemplazarMatchesYDiscrepancias } from "@/lib/conciliacion/persist"
-import { centavosAString } from "@/lib/conciliacion/matching"
-import { approveConciliacion } from "@/lib/conciliacion/approve"
+import { rowToAsiento } from "@/lib/conciliacion/mappers"
+import { cargarMovimientosActivos } from "@/lib/conciliacion/movimientos-activos"
+import { centavosAString, TOLERANCIA_CUADRE } from "@/lib/conciliacion/matching"
+import { evaluarContabilizar } from "@/lib/conciliacion/contabilizar"
+import { currentUserId } from "@/lib/auth/current-user"
 import crypto from "crypto"
-import type { Movimiento, Asiento } from "@/lib/types"
+import type { Asiento } from "@/lib/types"
 
 export const actionTools = {
   ejecutar_matching: tool({
@@ -29,44 +32,19 @@ export const actionTools = {
         return { error: `Stage actual: ${session.stage}. Requerido: tango-done (extraer banco y mayor primero).` }
       }
 
-      // Obtener movimientos y asientos
-      const movs = await db.select().from(movimientosTable).where(eq(movimientosTable.conciliacionId, sessionId))
-      const asien = await db.select().from(asientosTable).where(eq(asientosTable.conciliacionId, sessionId))
+      // Obtener movimientos (activos, sin los diferidos) y asientos — en paralelo
+      const [{ movimientos }, asien] = await Promise.all([
+        cargarMovimientosActivos(sessionId),
+        db.select().from(asientosTable).where(eq(asientosTable.conciliacionId, sessionId)),
+      ])
 
-      if (movs.length === 0) return { error: "Sin movimientos cargados del extracto" }
+      if (movimientos.length === 0) return { error: "Sin movimientos cargados del extracto" }
       if (asien.length === 0) return { error: "Sin asientos cargados del mayor Tango" }
 
-      // Convertir a tipos para matching
-      const movimientos: Movimiento[] = movs.map(m => ({
-        id: m.id,
-        fecha: m.fecha,
-        descripcion: m.descripcion,
-        referencia: m.referencia,
-        monto: m.monto,
-        saldo: m.saldo ?? undefined,
-        categoria: m.categoria as any,
-      }))
-
-      const asientos: Asiento[] = asien.map(a => ({
-        id: a.id,
-        fecha: a.fecha,
-        descripcion: a.descripcion,
-        referencia: a.referencia,
-        monto: a.monto,
-        cuenta: a.cuenta,
-        debe: a.debe ?? undefined,
-        haber: a.haber ?? undefined,
-        saldo: a.saldo ?? undefined,
-      }))
+      const asientos: Asiento[] = asien.map(rowToAsiento)
 
       // Ejecutar matching
-      const resultado = conciliar(
-        movimientos,
-        asientos,
-        session.saldoFinal,
-        undefined,
-        session.saldoMayor
-      )
+      const resultado = conciliar(movimientos, asientos)
 
       // Guardar matches + discrepancias en DB (atómico)
       const matchesToSave = aprobarMatches
@@ -96,13 +74,29 @@ export const actionTools = {
 
   aprobar_conciliacion: tool({
     description:
-      "Marca una conciliación como completada (stage=done) y registra el saldo conciliado en la tabla saldosBanco. Llamá esto después de ejecutar_matching cuando la diferencia sea 0 o aceptable.",
+      "PROPONE aprobar una conciliación. NO la aprueba: la aprobación es un paso que confirma el humano con el botón 'Aprobar' del panel derecho. Usá esto para verificar que está lista y avisarle al usuario.",
     inputSchema: z.object({
       sessionId: z.string().describe("ID UUID de la sesión de conciliación"),
-      aceptarDiferencia: z.boolean().optional().describe("Si true, aprueba incluso si hay diferencia residual. Default: false."),
     }),
-    execute: async ({ sessionId, aceptarDiferencia = false }) => {
-      return approveConciliacion(sessionId, aceptarDiferencia)
+    // No muta estado financiero: solo valida y propone. La aprobación real
+    // ocurre por click humano en TasksPanel → /api/tasks. Ver /cso F1.
+    execute: async ({ sessionId }) => {
+      const session = await getConciliacion(sessionId)
+      if (!session) return { error: "Sesión no encontrada" }
+      if (session.stage !== "done") {
+        return { error: `Stage actual: ${session.stage}. Ejecutá el matching primero (ejecutar_matching).` }
+      }
+      const dif = session.diferencia ?? 0
+      return {
+        pendienteConfirmacion: true,
+        resumen: {
+          sessionId,
+          conciliacion: `${session.bankName ?? "?"} — ${session.label}`,
+          diferencia: centavosAString(dif),
+          cuadra: Math.abs(dif) <= TOLERANCIA_CUADRE,
+        },
+        mensaje: "Aprobá desde el panel derecho (botón 'Aprobar'). El agente no aprueba por su cuenta.",
+      }
     },
   }),
 
@@ -116,6 +110,7 @@ export const actionTools = {
     execute: async ({ label, bankHint }) => {
       const sessionId = crypto.randomUUID()
       const now = new Date().toISOString()
+      const userId = await currentUserId()
 
       await db.insert(conciliaciones).values({
         id: sessionId,
@@ -123,6 +118,8 @@ export const actionTools = {
         stage: "new",
         createdAt: now,
         updatedAt: now,
+        createdBy: userId,
+        updatedBy: userId,
       })
 
       return {
@@ -132,6 +129,19 @@ export const actionTools = {
         stage: "new",
         hint: "Próximo paso: subí el extracto bancario (PDF o Excel) con sessionId=" + sessionId,
       }
+    },
+  }),
+
+  contabilizar_pendientes: tool({
+    description:
+      "PROPONE contabilizar los ítems pendientes de una conciliación (crear asientos de ajuste para cerrarla en 0). NO los contabiliza: eso lo confirma el humano con el botón 'Contabilizar pendientes' en la conciliación. Usá esto para verificar que cierra en 0 y avisarle al usuario cuántos asientos se crearían.",
+    inputSchema: z.object({
+      sessionId: z.string().describe("ID UUID de la sesión de conciliación"),
+    }),
+    // No muta estado financiero: solo valida y propone. La contabilización real
+    // ocurre por click humano → /api/conciliacion/contabilizar. Ver /cso F1.
+    execute: async ({ sessionId }) => {
+      return evaluarContabilizar(sessionId)
     },
   }),
 

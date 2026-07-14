@@ -8,6 +8,27 @@
       "when": 1783375987361,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784032419563,
+      "tag": "0001_peaceful_greymalkin",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784043422698,
+      "tag": "0002_flimsy_silver_samurai",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784065836126,
+      "tag": "0003_naive_rafael_vega",
+      "breakpoints": true
     }
   ]
 }

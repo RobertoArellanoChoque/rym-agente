@@ -1,0 +1,1615 @@
+{
+  "id": "4d5a9c61-88ec-49c6-ad4f-ac940d2f4b86",
+  "prevId": "09f7f820-8270-4497-82a0-58eea5819277",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.asientos": {
+      "name": "asientos",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "conciliacion_id": {
+          "name": "conciliacion_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fecha": {
+          "name": "fecha",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "descripcion": {
+          "name": "descripcion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "referencia": {
+          "name": "referencia",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "monto": {
+          "name": "monto",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cuenta": {
+          "name": "cuenta",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "debe": {
+          "name": "debe",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "haber": {
+          "name": "haber",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "saldo": {
+          "name": "saldo",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "asientos_conciliacion_id_idx": {
+          "name": "asientos_conciliacion_id_idx",
+          "columns": [
+            {
+              "expression": "conciliacion_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "asientos_conciliacion_id_conciliaciones_id_fk": {
+          "name": "asientos_conciliacion_id_conciliaciones_id_fk",
+          "tableFrom": "asientos",
+          "tableTo": "conciliaciones",
+          "columnsFrom": [
+            "conciliacion_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.conciliaciones": {
+      "name": "conciliaciones",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stage": {
+          "name": "stage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'new'"
+        },
+        "periodo": {
+          "name": "periodo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "banco_id": {
+          "name": "banco_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "banco_nombre": {
+          "name": "banco_nombre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "banco_confidence": {
+          "name": "banco_confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "saldo_anterior": {
+          "name": "saldo_anterior",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "saldo_final": {
+          "name": "saldo_final",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "movimientos_count": {
+          "name": "movimientos_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "asientos_count": {
+          "name": "asientos_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "saldo_banco": {
+          "name": "saldo_banco",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "saldo_mayor": {
+          "name": "saldo_mayor",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "diferencia": {
+          "name": "diferencia",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "conciliaciones_created_at_idx": {
+          "name": "conciliaciones_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "conciliaciones_updated_at_idx": {
+          "name": "conciliaciones_updated_at_idx",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "conciliaciones_stage_chk": {
+          "name": "conciliaciones_stage_chk",
+          "value": "stage in ('new', 'banco-done', 'tango-done', 'done', 'aprobada')"
+        },
+        "conciliaciones_banco_confidence_chk": {
+          "name": "conciliaciones_banco_confidence_chk",
+          "value": "banco_confidence is null or banco_confidence in ('high', 'low')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.discrepancias": {
+      "name": "discrepancias",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "conciliacion_id": {
+          "name": "conciliacion_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo": {
+          "name": "tipo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fecha": {
+          "name": "fecha",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "descripcion": {
+          "name": "descripcion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "monto": {
+          "name": "monto",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "movimiento_id": {
+          "name": "movimiento_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "asiento_id": {
+          "name": "asiento_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bucket_override": {
+          "name": "bucket_override",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revisar": {
+          "name": "revisar",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "discrepancias_conciliacion_id_idx": {
+          "name": "discrepancias_conciliacion_id_idx",
+          "columns": [
+            {
+              "expression": "conciliacion_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "discrepancias_conciliacion_id_conciliaciones_id_fk": {
+          "name": "discrepancias_conciliacion_id_conciliaciones_id_fk",
+          "tableFrom": "discrepancias",
+          "tableTo": "conciliaciones",
+          "columnsFrom": [
+            "conciliacion_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discrepancias_movimiento_id_movimientos_id_fk": {
+          "name": "discrepancias_movimiento_id_movimientos_id_fk",
+          "tableFrom": "discrepancias",
+          "tableTo": "movimientos",
+          "columnsFrom": [
+            "movimiento_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "discrepancias_asiento_id_asientos_id_fk": {
+          "name": "discrepancias_asiento_id_asientos_id_fk",
+          "tableFrom": "discrepancias",
+          "tableTo": "asientos",
+          "columnsFrom": [
+            "asiento_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "discrepancias_tipo_chk": {
+          "name": "discrepancias_tipo_chk",
+          "value": "tipo in ('en_extracto_no_en_mayor', 'en_mayor_no_en_extracto')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.lineas_tarjeta": {
+      "name": "lineas_tarjeta",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "resumen_id": {
+          "name": "resumen_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cuenta": {
+          "name": "cuenta",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "descripcion": {
+          "name": "descripcion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "monto": {
+          "name": "monto",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "periodo": {
+          "name": "periodo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "estado": {
+          "name": "estado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "tipo_linea": {
+          "name": "tipo_linea",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'cargo'"
+        }
+      },
+      "indexes": {
+        "lineas_tarjeta_resumen_id_idx": {
+          "name": "lineas_tarjeta_resumen_id_idx",
+          "columns": [
+            {
+              "expression": "resumen_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "lineas_tarjeta_resumen_id_resumen_tarjetas_id_fk": {
+          "name": "lineas_tarjeta_resumen_id_resumen_tarjetas_id_fk",
+          "tableFrom": "lineas_tarjeta",
+          "tableTo": "resumen_tarjetas",
+          "columnsFrom": [
+            "resumen_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "lineas_tarjeta_tipo_linea_chk": {
+          "name": "lineas_tarjeta_tipo_linea_chk",
+          "value": "tipo_linea in ('cargo', 'impuesto', 'devolucion')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.matches": {
+      "name": "matches",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "conciliacion_id": {
+          "name": "conciliacion_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "movimiento_id": {
+          "name": "movimiento_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "asiento_id": {
+          "name": "asiento_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "score": {
+          "name": "score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "motivo": {
+          "name": "motivo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo": {
+          "name": "tipo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'confirmed'"
+        },
+        "diferencia_monto": {
+          "name": "diferencia_monto",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "explicacion": {
+          "name": "explicacion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "matches_conciliacion_id_idx": {
+          "name": "matches_conciliacion_id_idx",
+          "columns": [
+            {
+              "expression": "conciliacion_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "matches_movimiento_id_idx": {
+          "name": "matches_movimiento_id_idx",
+          "columns": [
+            {
+              "expression": "movimiento_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "matches_asiento_id_idx": {
+          "name": "matches_asiento_id_idx",
+          "columns": [
+            {
+              "expression": "asiento_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "matches_conciliacion_id_conciliaciones_id_fk": {
+          "name": "matches_conciliacion_id_conciliaciones_id_fk",
+          "tableFrom": "matches",
+          "tableTo": "conciliaciones",
+          "columnsFrom": [
+            "conciliacion_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "matches_movimiento_id_movimientos_id_fk": {
+          "name": "matches_movimiento_id_movimientos_id_fk",
+          "tableFrom": "matches",
+          "tableTo": "movimientos",
+          "columnsFrom": [
+            "movimiento_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "matches_asiento_id_asientos_id_fk": {
+          "name": "matches_asiento_id_asientos_id_fk",
+          "tableFrom": "matches",
+          "tableTo": "asientos",
+          "columnsFrom": [
+            "asiento_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "matches_tipo_chk": {
+          "name": "matches_tipo_chk",
+          "value": "tipo in ('confirmed', 'probable', 'rejected')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.movimientos": {
+      "name": "movimientos",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "conciliacion_id": {
+          "name": "conciliacion_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fecha": {
+          "name": "fecha",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "descripcion": {
+          "name": "descripcion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "referencia": {
+          "name": "referencia",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "monto": {
+          "name": "monto",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "saldo": {
+          "name": "saldo",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "categoria": {
+          "name": "categoria",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grupo_id": {
+          "name": "grupo_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "movimientos_conciliacion_id_idx": {
+          "name": "movimientos_conciliacion_id_idx",
+          "columns": [
+            {
+              "expression": "conciliacion_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "movimientos_conciliacion_id_conciliaciones_id_fk": {
+          "name": "movimientos_conciliacion_id_conciliaciones_id_fk",
+          "tableFrom": "movimientos",
+          "tableTo": "conciliaciones",
+          "columnsFrom": [
+            "conciliacion_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "movimientos_categoria_chk": {
+          "name": "movimientos_categoria_chk",
+          "value": "categoria is null or categoria in ('impuesto', 'percepcion', 'transferencia', 'cheque', 'comision', 'prestamo', 'prestamo_iva', 'otro')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.partidas": {
+      "name": "partidas",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "banco_id": {
+          "name": "banco_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "descripcion": {
+          "name": "descripcion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "monto": {
+          "name": "monto",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fecha": {
+          "name": "fecha",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "partidas_banco_id_idx": {
+          "name": "partidas_banco_id_idx",
+          "columns": [
+            {
+              "expression": "banco_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.resumen_tarjetas": {
+      "name": "resumen_tarjetas",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "nombre_tarjeta": {
+          "name": "nombre_tarjeta",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "periodo": {
+          "name": "periodo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "total_monto": {
+          "name": "total_monto",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "tarjeta_maestra_id": {
+          "name": "tarjeta_maestra_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "creado_en": {
+          "name": "creado_en",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "resumen_tarjetas_creado_en_idx": {
+          "name": "resumen_tarjetas_creado_en_idx",
+          "columns": [
+            {
+              "expression": "creado_en",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "resumen_tarjetas_tarjeta_maestra_id_tarjetas_maestras_id_fk": {
+          "name": "resumen_tarjetas_tarjeta_maestra_id_tarjetas_maestras_id_fk",
+          "tableFrom": "resumen_tarjetas",
+          "tableTo": "tarjetas_maestras",
+          "columnsFrom": [
+            "tarjeta_maestra_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.retencion_items": {
+      "name": "retencion_items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "retencion_id": {
+          "name": "retencion_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo": {
+          "name": "tipo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "monto": {
+          "name": "monto",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "porcentaje": {
+          "name": "porcentaje",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "retencion_items_retencion_id_idx": {
+          "name": "retencion_items_retencion_id_idx",
+          "columns": [
+            {
+              "expression": "retencion_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "retencion_items_retencion_id_retenciones_id_fk": {
+          "name": "retencion_items_retencion_id_retenciones_id_fk",
+          "tableFrom": "retencion_items",
+          "tableTo": "retenciones",
+          "columnsFrom": [
+            "retencion_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.retenciones": {
+      "name": "retenciones",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "empresa": {
+          "name": "empresa",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cuit": {
+          "name": "cuit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "fecha_pago": {
+          "name": "fecha_pago",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "concepto": {
+          "name": "concepto",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "nro_comprobante": {
+          "name": "nro_comprobante",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "monto_bruto": {
+          "name": "monto_bruto",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "monto_neto": {
+          "name": "monto_neto",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "creado_en": {
+          "name": "creado_en",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "retenciones_creado_en_idx": {
+          "name": "retenciones_creado_en_idx",
+          "columns": [
+            {
+              "expression": "creado_en",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.retenciones_arca": {
+      "name": "retenciones_arca",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "lote_id": {
+          "name": "lote_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "jurisdiccion": {
+          "name": "jurisdiccion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cuit_agente": {
+          "name": "cuit_agente",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fecha_retencion": {
+          "name": "fecha_retencion",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo": {
+          "name": "tipo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "letra": {
+          "name": "letra",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nro_comprobante": {
+          "name": "nro_comprobante",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nro_compr_origen": {
+          "name": "nro_compr_origen",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "importe": {
+          "name": "importe",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "creado_en": {
+          "name": "creado_en",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "retenciones_arca_creado_en_idx": {
+          "name": "retenciones_arca_creado_en_idx",
+          "columns": [
+            {
+              "expression": "creado_en",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "retenciones_arca_jurisdiccion_chk": {
+          "name": "retenciones_arca_jurisdiccion_chk",
+          "value": "jurisdiccion in ('nacional', 'caba', 'otra')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.retenciones_tango": {
+      "name": "retenciones_tango",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "lote_id": {
+          "name": "lote_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cod_cta": {
+          "name": "cod_cta",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "desc_cta": {
+          "name": "desc_cta",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fecha": {
+          "name": "fecha",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cod_comp": {
+          "name": "cod_comp",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "n_comp": {
+          "name": "n_comp",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "debe": {
+          "name": "debe",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "haber": {
+          "name": "haber",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "saldo": {
+          "name": "saldo",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "creado_en": {
+          "name": "creado_en",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "retenciones_tango_creado_en_idx": {
+          "name": "retenciones_tango_creado_en_idx",
+          "columns": [
+            {
+              "expression": "creado_en",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.saldos_banco": {
+      "name": "saldos_banco",
+      "schema": "",
+      "columns": {
+        "banco_id": {
+          "name": "banco_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "banco_nombre": {
+          "name": "banco_nombre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ultimo_saldo": {
+          "name": "ultimo_saldo",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ultima_fecha": {
+          "name": "ultima_fecha",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'auto'"
+        },
+        "saldo_conciliado": {
+          "name": "saldo_conciliado",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fecha_conciliacion": {
+          "name": "fecha_conciliacion",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_by_user": {
+          "name": "updated_by_user",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "saldos_banco_updated_by_chk": {
+          "name": "saldos_banco_updated_by_chk",
+          "value": "updated_by in ('auto', 'manual')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.sesiones": {
+      "name": "sesiones",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "modulo": {
+          "name": "modulo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "estado": {
+          "name": "estado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'activo'"
+        },
+        "datos": {
+          "name": "datos",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "sesiones_modulo_updated_at_idx": {
+          "name": "sesiones_modulo_updated_at_idx",
+          "columns": [
+            {
+              "expression": "modulo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "sesiones_modulo_chk": {
+          "name": "sesiones_modulo_chk",
+          "value": "modulo in ('ventas', 'contabilidad')"
+        },
+        "sesiones_estado_chk": {
+          "name": "sesiones_estado_chk",
+          "value": "estado in ('activo', 'completado', 'error')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.tarjetas_maestras": {
+      "name": "tarjetas_maestras",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "nombre": {
+          "name": "nombre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "banco": {
+          "name": "banco",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tipo": {
+          "name": "tipo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "activa": {
+          "name": "activa",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "tarjetas_maestras_nombre_unique": {
+          "name": "tarjetas_maestras_nombre_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "nombre"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "tarjetas_maestras_tipo_chk": {
+          "name": "tarjetas_maestras_tipo_chk",
+          "value": "tipo in ('VISA', 'MASTERCARD', 'AMEX')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.uso_api": {
+      "name": "uso_api",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ts": {
+          "name": "ts",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "modelo": {
+          "name": "modelo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operacion": {
+          "name": "operacion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tokens_in": {
+          "name": "tokens_in",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tokens_out": {
+          "name": "tokens_out",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "costo_usd": {
+          "name": "costo_usd",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "uso_api_provider_chk": {
+          "name": "uso_api_provider_chk",
+          "value": "provider in ('anthropic', 'mistral', 'openai')"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

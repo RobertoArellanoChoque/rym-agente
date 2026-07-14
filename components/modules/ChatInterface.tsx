@@ -9,12 +9,15 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { useChat, type ChatMessage as Message, type ToolEvent } from "@/lib/context/chat-context"
+import { useAgentActivity } from "@/lib/context/agent-activity-context"
 
 const TOOL_LABELS: Record<string, string> = {
   ver_estado_general: "Estado general",
   ejecutar_matching: "Matching",
   aprobar_conciliacion: "Aprobar conciliación",
   crear_sesion: "Nueva sesión",
+  explicar_diferencia: "Explicar diferencia",
+  contabilizar_pendientes: "Contabilizar pendientes",
   listar_discrepancias: "Discrepancias",
   listar_sesiones: "Listar sesiones",
   ver_sesion: "Ver sesión",
@@ -73,9 +76,10 @@ function ToolCard({ tool }: { tool: ToolEvent }) {
 
 export function ChatInterface({ welcomeMessage = DEFAULT_WELCOME }: { welcomeMessage?: string }) {
   const { messages, setMessages, clearMessages } = useChat()
+  const { setIsStreaming } = useAgentActivity()
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
-  const [attachedFile, setAttachedFile] = useState<File | null>(null)
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [draggingOver, setDraggingOver] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -113,33 +117,45 @@ export function ChatInterface({ welcomeMessage = DEFAULT_WELCOME }: { welcomeMes
   const send = useCallback(async (overrideText?: string) => {
     if (loading) return
     const text = (overrideText ?? input).trim()
-    if (!text && !attachedFile) return
+    if (!text && attachedFiles.length === 0) return
 
     if (!overrideText) setInput("")
+
+    // Multi-archivo → conciliación batch (agrupa por banco+mes, sin LLM)
+    if (attachedFiles.length > 1) {
+      const files = attachedFiles
+      setAttachedFiles([])
+      setLoading(true); setIsStreaming(true)
+      try { await runBatch(files, text) } finally { setLoading(false); setIsStreaming(false) }
+      return
+    }
+
+    const single = attachedFiles[0] ?? null
     setLoading(true)
+    setIsStreaming(true)
 
     const historyMessages = [...messages]
 
     let fileContext: string | null = null
-    if (attachedFile) {
-      const fileName = attachedFile.name
+    if (single) {
+      const fileName = single.name
       addMessage({ role: "user", content: text ? `${text}\n\n📎 ${fileName}` : `📎 ${fileName}` })
       try {
-        fileContext = await processFile(attachedFile)
+        fileContext = await processFile(single)
         if (fileContext) addMessage({ role: "system", content: fileContext })
       } catch {
         fileContext = "Error al procesar el archivo."
         addMessage({ role: "system", content: fileContext })
       }
-      setAttachedFile(null)
+      setAttachedFiles([])
     } else {
       addMessage({ role: "user", content: text })
     }
 
     const chatHistory = [
       ...historyMessages,
-      attachedFile
-        ? { id: "", role: "user" as const, content: text ? `${text}\n\n📎 ${attachedFile?.name ?? "archivo"}` : `📎 ${attachedFile?.name ?? "archivo"}` }
+      single
+        ? { id: "", role: "user" as const, content: text ? `${text}\n\n📎 ${single.name}` : `📎 ${single.name}` }
         : { id: "", role: "user" as const, content: text },
       ...(fileContext ? [{ id: "", role: "user" as const, content: `[ARCHIVO PROCESADO]\n${fileContext}` }] : []),
     ]
@@ -208,17 +224,39 @@ export function ChatInterface({ welcomeMessage = DEFAULT_WELCOME }: { welcomeMes
       )
     } finally {
       setLoading(false)
+      setIsStreaming(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, input, attachedFile, messages, sessionId])
+  }, [loading, input, attachedFiles, messages, sessionId])
+
+  const esFormatoValido = (f: File) => ["pdf", "xlsx", "xls", "csv"].includes(f.name.toLowerCase().split(".").pop() ?? "")
 
   function handleFileDrop(e: React.DragEvent) {
     e.preventDefault()
     setDraggingOver(false)
-    const file = e.dataTransfer.files[0]
-    if (!file) return
-    const ext = file.name.toLowerCase().split(".").pop() ?? ""
-    if (["pdf", "xlsx", "xls", "csv"].includes(ext)) setAttachedFile(file)
+    const files = Array.from(e.dataTransfer.files).filter(esFormatoValido)
+    if (files.length) setAttachedFiles(prev => [...prev, ...files])
+  }
+
+  // Conciliación multi-archivo: NO pasa por el LLM (binario nunca al modelo, /cso F1).
+  async function runBatch(files: File[], text: string) {
+    addMessage({ role: "user", content: `${text ? text + "\n\n" : ""}${files.length} archivos: ${files.map(f => f.name).join(", ")}` })
+    addMessage({ role: "system", content: "Procesando y conciliando por banco y mes…" })
+    const form = new FormData()
+    files.forEach(f => form.append("files", f))
+    try {
+      const res = await fetch("/api/conciliacion/ingest-batch", { method: "POST", body: form })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) { addMessage({ role: "system", content: `Error: ${d.error ?? "no se pudo procesar"}` }); return }
+      const fmt = (c?: number) => c == null ? "" : ` — dif $${(Math.abs(c) / 100).toLocaleString("es-AR")}${c === 0 ? " (cuadra)" : ""}`
+      const lines = (d.sesiones ?? []).map((s: { label?: string; banco: boolean; tango: boolean; diferencia?: number }) =>
+        `• ${s.label ?? "Conciliación"}${s.banco && s.tango ? fmt(s.diferencia) : s.banco ? " — solo banco (falta mayor)" : " — solo mayor (falta extracto)"}`)
+      const errs = (d.errores ?? []).map((e: { file: string; error: string }) => `Error — ${e.file}: ${e.error}`)
+      addMessage({ role: "system", content: `Listo. ${d.sesiones?.length ?? 0} conciliación(es):\n${lines.join("\n")}${errs.length ? `\n\n${errs.join("\n")}` : ""}` })
+      window.dispatchEvent(new Event("tasks-refresh"))
+    } catch {
+      addMessage({ role: "system", content: "Error al procesar los archivos." })
+    }
   }
 
   const isEmptyState = messages.length === 1 && messages[0].id === "welcome"
@@ -252,10 +290,10 @@ export function ChatInterface({ welcomeMessage = DEFAULT_WELCOME }: { welcomeMes
       {/* Empty state splash */}
       {isEmptyState ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-5 text-center px-6">
-          <div className="flex items-center justify-center w-12 h-12 rounded-2xl shrink-0" style={{ background: "rgba(229,39,19,0.1)" }}>
+          <div className="flex items-center justify-center w-12 h-12 rounded-2xl shrink-0" style={{ background: "color-mix(in oklch, var(--primary) 10%, transparent)" }}>
             <svg viewBox="0 0 24 22" fill="none" className="w-6 h-6" aria-hidden>
-              <path d="M2 11 L7.5 18 L19 2" stroke="#E52713" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-              <line x1="5" y1="21" x2="13" y2="21" stroke="#E52713" strokeWidth="2" strokeLinecap="round"/>
+              <path d="M2 11 L7.5 18 L19 2" stroke="var(--primary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <line x1="5" y1="21" x2="13" y2="21" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round"/>
             </svg>
           </div>
           <div>
@@ -322,14 +360,21 @@ export function ChatInterface({ welcomeMessage = DEFAULT_WELCOME }: { welcomeMes
         </ScrollArea>
       )}
 
-      {/* File attached preview */}
-      {attachedFile && (
-        <div className="flex items-center gap-2 px-2 py-1.5 mb-2 bg-muted rounded-md text-xs">
-          <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <span className="flex-1 truncate">{attachedFile.name}</span>
-          <button onClick={() => setAttachedFile(null)} className="text-muted-foreground hover:text-foreground">
-            <X className="h-3.5 w-3.5" />
-          </button>
+      {/* Archivos adjuntos */}
+      {attachedFiles.length > 0 && (
+        <div className="space-y-1 mb-2">
+          {attachedFiles.length > 1 && (
+            <p className="px-2 text-[10px] text-muted-foreground">{attachedFiles.length} archivos → se conciliarán por banco y mes</p>
+          )}
+          {attachedFiles.map((f, i) => (
+            <div key={i} className="flex items-center gap-2 px-2 py-1.5 bg-muted rounded-md text-xs">
+              <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="flex-1 truncate">{f.name}</span>
+              <button onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -339,8 +384,13 @@ export function ChatInterface({ welcomeMessage = DEFAULT_WELCOME }: { welcomeMes
           ref={fileInputRef}
           type="file"
           accept=".pdf,.xlsx,.xls,.csv"
+          multiple
           className="hidden"
-          onChange={e => e.target.files?.[0] && setAttachedFile(e.target.files[0])}
+          onChange={e => {
+            const files = Array.from(e.target.files ?? []).filter(esFormatoValido)
+            if (files.length) setAttachedFiles(prev => [...prev, ...files])
+            e.target.value = ""
+          }}
         />
         <Button
           variant="ghost"
@@ -357,14 +407,14 @@ export function ChatInterface({ welcomeMessage = DEFAULT_WELCOME }: { welcomeMes
           rows={1}
           onChange={e => { setInput(e.target.value); autoResize() }}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }}
-          placeholder={attachedFile ? "Agregá un mensaje o enviá el archivo…" : "Preguntá o arrastrá un PDF…"}
+          placeholder={attachedFiles.length ? "Agregá un mensaje o enviá los archivos…" : "Preguntá o arrastrá extractos y mayores…"}
           disabled={loading}
           className="flex-1 bg-transparent resize-none text-sm leading-relaxed outline-none min-h-[24px] max-h-[120px] placeholder:text-muted-foreground"
           style={{ lineHeight: "1.5rem" }}
         />
         <Button
           onClick={() => send()}
-          disabled={(!input.trim() && !attachedFile) || loading}
+          disabled={(!input.trim() && attachedFiles.length === 0) || loading}
           size="icon"
           className="h-7 w-7 shrink-0"
         >

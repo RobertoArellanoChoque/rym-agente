@@ -22,6 +22,11 @@ const INDEXES = [
   ["conciliaciones_updated_at_idx", "conciliaciones", "updated_at"],
   ["resumen_tarjetas_creado_en_idx", "resumen_tarjetas", "creado_en"],
   ["retenciones_creado_en_idx", "retenciones", "creado_en"],
+  ["uso_api_ts_idx", "uso_api", "ts"],
+  ["discrepancias_movimiento_id_idx", "discrepancias", "movimiento_id"],
+  ["discrepancias_asiento_id_idx", "discrepancias", "asiento_id"],
+  ["resumen_tarjetas_tarjeta_maestra_id_idx", "resumen_tarjetas", "tarjeta_maestra_id"],
+  ["conciliaciones_stage_idx", "conciliaciones", "stage"],
 ]
 
 // [constraint_name, table, column, ref_table, ref_col]
@@ -38,16 +43,9 @@ async function main() {
     console.log(`✓ ${name}`)
   }
 
-  console.log("\n=== JSONB ===")
-  // DROP DEFAULT antes del cast — un default text no castea auto a jsonb
-  await sql.unsafe(`ALTER TABLE "sesiones" ALTER COLUMN "datos" DROP DEFAULT`)
-  await sql.unsafe(`ALTER TABLE "sesiones" ALTER COLUMN "datos" SET DATA TYPE jsonb USING "datos"::jsonb`)
-  await sql.unsafe(`ALTER TABLE "sesiones" ALTER COLUMN "datos" SET DEFAULT '{}'::jsonb`)
-  console.log("✓ sesiones.datos -> jsonb")
-  await sql.unsafe(`ALTER TABLE "retenciones" ALTER COLUMN "retenciones_json" DROP DEFAULT`)
-  await sql.unsafe(`ALTER TABLE "retenciones" ALTER COLUMN "retenciones_json" SET DATA TYPE jsonb USING "retenciones_json"::jsonb`)
-  await sql.unsafe(`ALTER TABLE "retenciones" ALTER COLUMN "retenciones_json" SET DEFAULT '[]'::jsonb`)
-  console.log("✓ retenciones.retenciones_json -> jsonb")
+  // Nota: el bloque JSONB viejo se eliminó — `sesiones.datos` ya es jsonb en el schema
+  // y `retenciones.retenciones_json` ya no existe (migró a la tabla `retencion_items`).
+  // Ese ALTER rompía el script antes de llegar a las FKs.
 
   console.log("\n=== FKs huérfanas (ON DELETE SET NULL) ===")
   for (const [name, table, col, refTable, refCol] of FKS) {

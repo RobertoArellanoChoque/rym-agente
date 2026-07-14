@@ -4,6 +4,8 @@ export type Categoria =
   | "transferencia"
   | "cheque"
   | "comision"
+  | "prestamo"     // amortización/débito de préstamo (ej: AMORT.S/PRESTAMO OTORG.)
+  | "prestamo_iva" // impuesto adyacente a una amortización (IVA/IVA perc/sellos)
   | "otro"
 
 export type Movimiento = {
@@ -14,6 +16,7 @@ export type Movimiento = {
   monto: number // centavos, positivo=crédito, negativo=débito
   saldo?: number // saldo corriente del extracto
   categoria?: Categoria
+  grupoId?: string // agrupa amortización + impuestos relacionados de un préstamo
 }
 
 export type Asiento = {
@@ -52,6 +55,11 @@ export type Discrepancia = {
   monto: number // centavos
   movimientoId?: string
   asientoId?: string
+  categoria?: Categoria // copiada del movimiento origen (in-memory; en DB se re-join-ea)
+  grupoId?: string      // grupo préstamo del movimiento origen
+  id?: number           // id de la fila en DB (para PATCH de override/revisar)
+  bucketOverride?: string // categoría reasignada manualmente por el usuario
+  revisar?: boolean       // marcada para revisar (dudas)
 }
 
 export type ResultadoConciliacion = {
@@ -59,8 +67,8 @@ export type ResultadoConciliacion = {
   discrepancias: Discrepancia[]
   movimientos: Movimiento[]
   asientos: Asiento[]
-  saldoBanco: number // centavos — del extracto bancario
-  saldoMayor: number // centavos — último saldo columna K del mayor Tango
+  saldoBanco: number // centavos — neto del período banco (Σ monto movimientos), no saldo de cierre. Ver calcularFinanzas en matching.ts
+  saldoMayor: number // centavos — neto del período mayor (Σ monto asientos), no saldo de cierre
   conceptosPendientes: number // centavos — Σ movimientos banco no contabilizados en Tango
   conceptosPendientesTango: number // centavos — Σ asientos Tango no en banco
   diferencia: number // centavos — 0 = conciliado (fórmula: saldoBanco - saldoMayor - conceptosPendientes + conceptosPendientesTango)
@@ -70,7 +78,7 @@ export type ResultadoConciliacion = {
 }
 
 // UI: una conciliación en el cliente (puede haber varias a la vez)
-export type ConcStage = "new" | "banco-done" | "tango-done" | "done"
+export type ConcStage = "new" | "banco-done" | "tango-done" | "done" | "aprobada"
 export type ConcBusy = null | "banco" | "tango" | "comparar"
 
 export type ConciliacionUI = {

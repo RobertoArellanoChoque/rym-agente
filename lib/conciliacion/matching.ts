@@ -25,6 +25,11 @@ function jaccard(a: Set<string>, b: Set<string>): number {
   return intersection / union
 }
 
+// Tolerancia de cuadre: absorbe redondeo de OCR/parse (Math.round(n*100) en
+// banco y Tango). Un residual bajo esto se considera conciliado. El residual
+// exacto igual se muestra; esto solo controla el flag "cuadra"/aprobación.
+export const TOLERANCIA_CUADRE = 200 // centavos ($2)
+
 function scorePair(mov: Movimiento, asi: Asiento): number {
   // Monto exacto requerido
   if (mov.monto !== asi.monto) return 0
@@ -51,16 +56,79 @@ function scorePair(mov: Movimiento, asi: Asiento): number {
   return Math.min(score, 100)
 }
 
+/**
+ * Identidad de reconciliación. OJO: opera sobre MOVIMIENTOS NETOS del período
+ * (Σ monto), NO sobre saldos de cierre. Con saldos de cierre la fórmula colapsa
+ * a `saldoInicialBanco − saldoInicialMayor` (el arrastre del período anterior),
+ * que no tiene nada que ver con conciliar el mes. Los saldos de cierre se
+ * muestran aparte (header saldoAnterior/saldoFinal), no entran acá.
+ */
+export function calcularFinanzas(
+  movimientos: { monto: number }[],
+  asientos: { monto: number }[],
+  discrepancias: Discrepancia[],
+  sumaPartidas?: number
+) {
+  const saldoBanco = movimientos.reduce((s, m) => s + m.monto, 0) // neto período
+  const saldoMayor = asientos.reduce((s, a) => s + a.monto, 0)    // neto período
+  const conceptosPendientes = discrepancias
+    .filter(d => d.tipo === "en_extracto_no_en_mayor")
+    .reduce((s, d) => s + d.monto, 0)
+  const conceptosPendientesTango = discrepancias
+    .filter(d => d.tipo === "en_mayor_no_en_extracto")
+    .reduce((s, d) => s + d.monto, 0)
+  const diferencia = saldoBanco - saldoMayor - conceptosPendientes + conceptosPendientesTango
+  return {
+    saldoBanco,
+    saldoMayor,
+    conceptosPendientes,
+    conceptosPendientesTango,
+    diferencia,
+    diferenciaAjustada: sumaPartidas !== undefined ? diferencia - sumaPartidas : undefined,
+  }
+}
+
 export function conciliar(
   movimientos: Movimiento[],
   asientos: Asiento[],
-  saldoFinalExtracto?: number,
-  sumaPartidas?: number,
-  saldoMayorOverride?: number
+  sumaPartidas?: number
 ): ResultadoConciliacion {
   const matches: Match[] = []
   const usedAsientos = new Set<string>()
   const usedMovimientos = new Set<string>()
+
+  // ── Pre-pass: grupos préstamo (N líneas banco) vs asiento Tango combinado ──
+  // El banco muestra AMORT + IVAs como líneas separadas; Tango las registra en
+  // UN asiento por la suma exacta. Corre ANTES del greedy para que el asiento
+  // combinado no sea consumido por un match 1:1.
+  const grupos = new Map<string, Movimiento[]>()
+  for (const mov of movimientos) {
+    if (!mov.grupoId) continue
+    const arr = grupos.get(mov.grupoId) ?? []
+    arr.push(mov)
+    grupos.set(mov.grupoId, arr)
+  }
+  for (const [, miembros] of grupos) {
+    const suma = miembros.reduce((s, m) => s + m.monto, 0)
+    const fechaGrupo = new Date(miembros[0].fecha).getTime()
+    const asiento = asientos.find(a =>
+      !usedAsientos.has(a.id) &&
+      a.monto === suma &&
+      Math.abs(new Date(a.fecha).getTime() - fechaGrupo) <= 7 * 86_400_000
+    )
+    if (!asiento) continue
+    usedAsientos.add(asiento.id)
+    for (const m of miembros) {
+      usedMovimientos.add(m.id)
+      matches.push({
+        movimientoId: m.id,
+        asientoId: asiento.id,
+        score: 95,
+        motivo: "Grupo préstamo vs asiento combinado",
+        tipo: "confirmed",
+      })
+    }
+  }
 
   // Greedy: puntúa todos los pares, toma los mejores primero
   const candidatos: Array<{ mov: Movimiento; asi: Asiento; score: number }> = []
@@ -101,6 +169,8 @@ export function conciliar(
         descripcion: mov.descripcion,
         monto: mov.monto,
         movimientoId: mov.id,
+        categoria: mov.categoria,
+        grupoId: mov.grupoId,
       })
     }
   }
@@ -118,30 +188,11 @@ export function conciliar(
     }
   }
 
-  // saldoBanco: usar saldoFinalExtracto si está disponible, sino suma de movimientos
-  const saldoBanco = saldoFinalExtracto ?? movimientos.reduce((s, m) => s + m.monto, 0)
-
-  // saldoMayor: override del registry (último K del CSV, capturado al subir), sino fallback a suma
-  const saldoMayor = saldoMayorOverride
-    ?? [...asientos].reverse().find(a => a.saldo !== undefined)?.saldo
-    ?? asientos.reduce((s, a) => s + a.monto, 0)
-
-  // Conceptos pendientes banco = movimientos del banco no contabilizados en Tango
-  const conceptosPendientes = discrepancias
-    .filter(d => d.tipo === "en_extracto_no_en_mayor")
-    .reduce((s, d) => s + d.monto, 0)
-
-  // Conceptos pendientes Tango = asientos en Tango no presentes en extracto
-  const conceptosPendientesTango = discrepancias
-    .filter(d => d.tipo === "en_mayor_no_en_extracto")
-    .reduce((s, d) => s + d.monto, 0)
-
-  // Fórmula correcta: saldoBanco = saldoMayor + banco_no_tango - tango_no_banco
-  const diferencia = saldoBanco - saldoMayor - conceptosPendientes + conceptosPendientesTango
+  const fin = calcularFinanzas(movimientos, asientos, discrepancias, sumaPartidas)
 
   // Buscar qué subset de discrepancias explica la diferencia residual
-  const candidatosAConciliarIds = diferencia !== 0
-    ? findCandidatos(discrepancias, diferencia)
+  const candidatosAConciliarIds = fin.diferencia !== 0
+    ? findCandidatos(discrepancias, fin.diferencia)
     : []
 
   return {
@@ -149,14 +200,9 @@ export function conciliar(
     discrepancias,
     movimientos,
     asientos,
-    saldoBanco,
-    saldoMayor,
-    conceptosPendientes,
-    conceptosPendientesTango,
-    diferencia,
+    ...fin,
     candidatosAConciliarIds,
     sumaPartidas,
-    diferenciaAjustada: sumaPartidas !== undefined ? diferencia - sumaPartidas : undefined,
   }
 }
 

@@ -5,6 +5,7 @@ import crypto from "crypto"
 import { db } from "@/lib/db"
 import { conciliaciones } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
+import { currentUserId } from "@/lib/auth/current-user"
 
 // Session files (extracto.md) stay on filesystem — only OCR artifacts, not data
 const SESSION_BASE = process.env.SESSION_BASE ?? path.join(os.homedir(), ".rym-agente", "sessions")
@@ -17,6 +18,7 @@ export function getSessionDir(sessionId: string): string {
 export async function createSession(label?: string): Promise<string> {
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
+  const userId = await currentUserId()
   // Create dir for OCR files (extracto.md)
   await fs.mkdir(getSessionDir(id), { recursive: true, mode: 0o700 })
   await db.insert(conciliaciones).values({
@@ -25,6 +27,8 @@ export async function createSession(label?: string): Promise<string> {
     stage: "new",
     createdAt: now,
     updatedAt: now,
+    createdBy: userId,
+    updatedBy: userId,
   })
   return id
 }

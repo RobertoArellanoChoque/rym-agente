@@ -31,7 +31,7 @@ export async function seedTarjetasMaestras(): Promise<void> {
       nombre: t.nombre,
       banco: t.banco,
       tipo: t.tipo,
-      activa: 1,
+      activa: true,
     })))
     .onConflictDoNothing({ target: tarjetasMaestras.nombre })
 }

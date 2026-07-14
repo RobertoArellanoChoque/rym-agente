@@ -12,13 +12,13 @@ function getDb(): Drizzle {
   if (!g._rymDb) {
     const url = process.env.DATABASE_URL
     if (!url) throw new Error("DATABASE_URL no configurada. Agregala en .env.local")
-    // Usar el SESSION pooler de Supabase (puerto 5432), no el transaction pooler (6543):
+    // Usar el SESSION pooler (puerto 5432), no el transaction pooler (6543):
     // este es un server Node persistente con pool propio; el transaction pooler deadlockea
     // bajo ráfagas concurrentes (Promise.all) sobre conexiones tibias. El transaction pooler
     // (6543) es solo para serverless. En 6543 hay que forzar prepare:false (pgbouncer no lo soporta).
     const isTransactionPooler = url.includes(":6543")
     // max:15 para las ráfagas Promise.all; idle_timeout/max_lifetime reciclan
-    // conexiones antes de que Supabase las cierre server-side (evita socket muerto).
+    // conexiones antes de que el proveedor las cierre server-side (evita socket muerto).
     const client = postgres(url, {
       prepare: !isTransactionPooler,
       max: 15,

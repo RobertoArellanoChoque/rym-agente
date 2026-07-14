@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { sessionExists } from "@/lib/sessions/manager"
-import { conciliar } from "@/lib/conciliacion/matching"
+import { conciliar, calcularFinanzas } from "@/lib/conciliacion/matching"
 import { upsertConciliacion, getConciliacion } from "@/lib/conciliacion/registry"
 import { reemplazarMatchesYDiscrepancias } from "@/lib/conciliacion/persist"
+import { rowToAsiento } from "@/lib/conciliacion/mappers"
+import { cargarMovimientosActivos } from "@/lib/conciliacion/movimientos-activos"
 import { getPartidas } from "@/lib/partidas/manager"
 import { generateJSONOpenAI } from "@/lib/ai/client"
+import { rateLimit, ipOf } from "@/lib/rate-limit"
 import { db } from "@/lib/db"
-import { movimientos as movimientosTable, asientos as asientosTable } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { asientos as asientosTable, movimientosDiferidos } from "@/lib/db/schema"
+import { and, eq, inArray } from "drizzle-orm"
 import type { Movimiento, Asiento, Match, Discrepancia } from "@/lib/types"
 
 const SugerenciaSchema = z.object({
@@ -22,44 +25,59 @@ const SugerenciaSchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
-  const body = await req.json()
+  if (!(await rateLimit(`ai:${ipOf(req)}`, 10, 60_000)))
+    return NextResponse.json({ error: "Demasiadas solicitudes, esperá un momento" }, { status: 429 })
+  const body = await req.json().catch(() => ({}))
   const { sessionId } = body as { sessionId?: string }
 
   if (!sessionId) return NextResponse.json({ error: "sessionId requerido" }, { status: 400 })
-  if (!(await sessionExists(sessionId))) {
-    return NextResponse.json({ error: "Sesión no encontrada o expirada" }, { status: 404 })
-  }
-
-  // Load from DB
-  const movimientosRows = await db.select().from(movimientosTable).where(eq(movimientosTable.conciliacionId, sessionId))
-  const asientosRows = await db.select().from(asientosTable).where(eq(asientosTable.conciliacionId, sessionId))
-
-  if (movimientosRows.length === 0) {
-    return NextResponse.json({ error: "Extracto bancario no encontrado. Completá el paso anterior." }, { status: 400 })
-  }
-  if (asientosRows.length === 0) {
-    return NextResponse.json({ error: "Mayor de Tango no encontrado. Completá el paso anterior." }, { status: 400 })
-  }
-
-  const movimientos: Movimiento[] = movimientosRows.map(r => ({
-    id: r.id, fecha: r.fecha, descripcion: r.descripcion, referencia: r.referencia,
-    monto: r.monto, saldo: r.saldo ?? undefined, categoria: r.categoria as Movimiento["categoria"],
-  }))
-  const asientos: Asiento[] = asientosRows.map(r => ({
-    id: r.id, fecha: r.fecha, descripcion: r.descripcion, referencia: r.referencia,
-    monto: r.monto, cuenta: r.cuenta, debe: r.debe ?? undefined, haber: r.haber ?? undefined, saldo: r.saldo ?? undefined,
-  }))
 
   try {
-    const conc = await getConciliacion(sessionId)
-    const saldoFinalExtracto = conc?.saldoFinal
+    if (!(await sessionExists(sessionId))) {
+      return NextResponse.json({ error: "Sesión no encontrada o expirada" }, { status: 404 })
+    }
+
+    // Load from DB — 3 lecturas independientes por sessionId, en paralelo
+    const [movActivos, asientosRows, conc] = await Promise.all([
+      cargarMovimientosActivos(sessionId),
+      db.select().from(asientosTable).where(eq(asientosTable.conciliacionId, sessionId)),
+      getConciliacion(sessionId),
+    ])
+    const { movimientos: movimientosActivos, sumaDiferidos } = movActivos
+
+    if (movimientosActivos.length === 0) {
+      return NextResponse.json({ error: "Extracto bancario no encontrado. Completá el paso anterior." }, { status: 400 })
+    }
+    if (asientosRows.length === 0) {
+      return NextResponse.json({ error: "Mayor de Tango no encontrado. Completá el paso anterior." }, { status: 400 })
+    }
+
+    const asientos: Asiento[] = asientosRows.map(rowToAsiento)
+
+    // Movimientos de este extracto ya vinculados como destino de un diferido
+    // resuelto (ver PATCH /api/conciliacion/diferidos): el usuario ya los marcó
+    // "conciliado" contra el diferido de un período anterior — no deben volver a
+    // generar su propia discrepancia acá. Mismo tratamiento que un diferido
+    // normal: se excluyen del matching y su monto pasa a sumaPartidas (ya está explicado).
+    const movActivosIds = movimientosActivos.map(m => m.id)
+    const diferidosResueltos = movActivosIds.length > 0
+      ? await db.select().from(movimientosDiferidos).where(and(
+          eq(movimientosDiferidos.estado, "conciliado"),
+          inArray(movimientosDiferidos.conciliadoEnMovimientoId, movActivosIds),
+        ))
+      : []
+    const resueltosIds = new Set(
+      diferidosResueltos.map(d => d.conciliadoEnMovimientoId).filter((id): id is string => id != null)
+    )
+    const sumaResueltos = diferidosResueltos.reduce((s, d) => s + d.monto, 0)
+    const movimientos: Movimiento[] = movimientosActivos.filter(m => !resueltosIds.has(m.id))
+
     const bankId = conc?.bankId ?? ""
     const partidas = bankId ? await getPartidas(bankId) : []
-    const sumaPartidas = partidas.reduce((s, p) => s + p.monto, 0)
-    const saldoMayorRegistrado = conc?.saldoMayor
+    const sumaPartidas = partidas.reduce((s, p) => s + p.monto, 0) + sumaDiferidos + sumaResueltos
 
     // ── FASE 1: matching determinístico ──────────────────────────────────
-    const fase1 = conciliar(movimientos, asientos, saldoFinalExtracto, sumaPartidas, saldoMayorRegistrado)
+    const fase1 = conciliar(movimientos, asientos, sumaPartidas)
     const confirmedMovIds = new Set(fase1.matches.map(m => m.movimientoId))
     const confirmedAsiIds = new Set(fase1.matches.map(m => m.asientoId))
 
@@ -110,6 +128,7 @@ Para cada movimiento bancario, buscá el asiento de Tango que probablemente sea 
       ...movimientos.filter(m => !confirmedMovIds.has(m.id)).map(m => ({
         tipo: "en_extracto_no_en_mayor" as const,
         fecha: m.fecha, descripcion: m.descripcion, monto: m.monto, movimientoId: m.id,
+        categoria: m.categoria, grupoId: m.grupoId,
       })),
       ...asientos.filter(a => !confirmedAsiIds.has(a.id)).map(a => ({
         tipo: "en_mayor_no_en_extracto" as const,
@@ -122,16 +141,21 @@ Para cada movimiento bancario, buscá el asiento de Tango que probablemente sea 
     // ── Persist (atómico) ─────────────────────────────────────────────────
     await reemplazarMatchesYDiscrepancias(sessionId, allMatches, discrepancias)
 
-    // Use fase1 result for financial formula (includes all matches in formula logic)
+    // Recomputar finanzas sobre las discrepancias FINALES (post-LLM), no las de
+    // fase1: fase2 puede matchear items que fase1 contaba como pendientes.
+    const fin = calcularFinanzas(movimientos, asientos, discrepancias, sumaPartidas)
     const resultado = {
       ...fase1,
+      ...fin,
       matches: allMatches,
       discrepancias,
+      candidatosAConciliarIds: fin.diferencia !== 0 ? fase1.candidatosAConciliarIds : [],
     }
 
     await upsertConciliacion(sessionId, {
       stage: "done",
-      saldoBanco: resultado.saldoBanco,
+      saldoBanco: resultado.saldoBanco, // neto período (ver calcularFinanzas)
+      saldoMayor: resultado.saldoMayor, // neto período — sobrescribe el cierre del stage tango
       diferencia: resultado.diferencia,
     })
 

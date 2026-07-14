@@ -17,7 +17,9 @@ function parseDate(val: unknown): string {
   return ""
 }
 
-function detectJurisdiccion(title: string): string {
+type Jurisdiccion = "nacional" | "caba" | "otra"
+
+function detectJurisdiccion(title: string): Jurisdiccion {
   const t = title.toLowerCase()
   if (t.includes("901") || t.includes("caba") || t.includes("ciudad autónoma") || t.includes("ciudad autonoma")) return "caba"
   if (t.includes("nacional") || t.includes("nación") || t.includes("nacion")) return "nacional"
@@ -34,14 +36,14 @@ export interface FilaArca {
   importe: number
 }
 
-export async function parseArcaXlsx(buffer: ArrayBuffer): Promise<{ jurisdiccion: string; filas: FilaArca[] }> {
+export async function parseArcaXlsx(buffer: ArrayBuffer): Promise<{ jurisdiccion: Jurisdiccion; filas: FilaArca[] }> {
   const ExcelJS = (await import("exceljs")).default
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.load(buffer)
   const ws = wb.worksheets[0]
   if (!ws) return { jurisdiccion: "otra", filas: [] }
 
-  let jurisdiccion = "otra"
+  let jurisdiccion: Jurisdiccion = "otra"
   let headerRow = -1
   const filas: FilaArca[] = []
 
