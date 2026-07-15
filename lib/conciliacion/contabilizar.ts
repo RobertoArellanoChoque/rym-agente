@@ -7,6 +7,7 @@ import { reemplazarMatchesYDiscrepancias } from "@/lib/conciliacion/persist"
 import { rowToAsiento } from "@/lib/conciliacion/mappers"
 import { cargarMovimientosActivos } from "@/lib/conciliacion/movimientos-activos"
 import { requireOrgId } from "@/lib/auth/current-user"
+import { audit } from "@/lib/audit"
 import crypto from "crypto"
 import type { Movimiento, Asiento } from "@/lib/types"
 
@@ -99,6 +100,11 @@ export async function contabilizarPendientes(sessionId: string): Promise<Contabi
       saldoMayor: despues.saldoMayor,
       diferencia: despues.diferencia,
     }, orgId, tx)
+  })
+
+  await audit("contabilizar", "conciliacion", sessionId, {
+    asientosCreados: nuevos.length,
+    diferencia: centavosAString(despues.diferencia),
   })
 
   return {

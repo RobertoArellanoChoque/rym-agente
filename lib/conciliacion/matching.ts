@@ -5,8 +5,9 @@ import type {
   Discrepancia,
   ResultadoConciliacion,
 } from "@/lib/types"
+import { firmaPar, type ContextoAprendizaje } from "./aliases"
 
-function tokenize(str: string): Set<string> {
+export function tokenize(str: string): Set<string> {
   return new Set(
     str
       .toLowerCase()
@@ -25,12 +26,34 @@ function jaccard(a: Set<string>, b: Set<string>): number {
   return intersection / union
 }
 
+// Similitud banco↔Tango con aliases aprendidos. Sin aliases = jaccard puro
+// (byte-idéntico al comportamiento previo). Con aliases, un token del banco que
+// tiene alias hacia un token de Tango cuenta como match: sube la intersección
+// dejando la unión igual, así el bonus SOLO puede subir (nunca baja).
+function simDescripcion(
+  banco: Set<string>,
+  tango: Set<string>,
+  aliases?: Map<string, Set<string>>
+): number {
+  if (!aliases || aliases.size === 0) return jaccard(banco, tango)
+  if (banco.size === 0 && tango.size === 0) return 0
+  const alcanzables = new Set<string>(banco)
+  for (const bt of banco) {
+    const exp = aliases.get(bt)
+    if (exp) for (const tt of exp) alcanzables.add(tt)
+  }
+  let intersection = 0
+  for (const tt of tango) if (alcanzables.has(tt)) intersection++
+  const union = new Set([...banco, ...tango]).size // unión base (sin inflar por aliases)
+  return intersection / union
+}
+
 // Tolerancia de cuadre: absorbe redondeo de OCR/parse (Math.round(n*100) en
 // banco y Tango). Un residual bajo esto se considera conciliado. El residual
 // exacto igual se muestra; esto solo controla el flag "cuadra"/aprobación.
 export const TOLERANCIA_CUADRE = 200 // centavos ($2)
 
-function scorePair(mov: Movimiento, asi: Asiento): number {
+function scorePair(mov: Movimiento, asi: Asiento, contexto?: ContextoAprendizaje): number {
   // Monto exacto requerido
   if (mov.monto !== asi.monto) return 0
 
@@ -49,9 +72,16 @@ function scorePair(mov: Movimiento, asi: Asiento): number {
     score += 30
   }
 
-  // Bonus por similitud de descripción (no requerida)
-  const sim = jaccard(tokenize(mov.descripcion), tokenize(asi.descripcion))
+  // Bonus por similitud de descripción (no requerida). Con contexto, los aliases
+  // aprendidos solo pueden subir este bonus; sin contexto es jaccard puro.
+  const sim = simDescripcion(tokenize(mov.descripcion), tokenize(asi.descripcion), contexto?.aliases)
   score += Math.round(sim * 20)
+
+  // Firma vetada por el humano: capá el score bajo el umbral 50 del greedy para
+  // no re-proponer lo que ya rechazó.
+  if (contexto?.rechazados?.has(firmaPar(mov.descripcion, asi.descripcion))) {
+    return Math.min(score, 40)
+  }
 
   return Math.min(score, 100)
 }
@@ -91,7 +121,8 @@ export function calcularFinanzas(
 export function conciliar(
   movimientos: Movimiento[],
   asientos: Asiento[],
-  sumaPartidas?: number
+  sumaPartidas?: number,
+  contexto?: ContextoAprendizaje
 ): ResultadoConciliacion {
   const matches: Match[] = []
   const usedAsientos = new Set<string>()
@@ -135,7 +166,7 @@ export function conciliar(
 
   for (const mov of movimientos) {
     for (const asi of asientos) {
-      const score = scorePair(mov, asi)
+      const score = scorePair(mov, asi, contexto)
       if (score >= 50) {
         candidatos.push({ mov, asi, score })
       }

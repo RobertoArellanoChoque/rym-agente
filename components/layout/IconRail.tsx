@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ArrowLeftRight, ShoppingCart, Truck, BookOpen, LayoutDashboard, Bot, ChevronRight, User } from "lucide-react"
+import { ArrowLeftRight, ShoppingCart, Truck, BookOpen, LayoutDashboard, Bot, ChevronRight, User, FileBarChart } from "lucide-react"
 import { UserButton, OrganizationSwitcher } from "@clerk/nextjs"
 import { useAgentActivity } from "@/lib/context/agent-activity-context"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
@@ -15,6 +15,7 @@ const modules = [
   { href: "/ventas",       label: "Ventas",       icon: ShoppingCart },
   { href: "/proveedores",  label: "Proveedores",  icon: Truck },
   { href: "/contabilidad", label: "Contabilidad", icon: BookOpen },
+  { href: "/reportes",     label: "Reportes",     icon: FileBarChart },
   { href: "/perfil",       label: "Perfil",       icon: User },
 ]
 

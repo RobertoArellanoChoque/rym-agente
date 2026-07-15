@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
   Loader2, CreditCard, ArrowLeftRight,
-  Plus, Trash2, ShoppingCart, BookOpen, Pencil, X, Inbox,
+  Plus, Trash2, ShoppingCart, BookOpen, Pencil, X, Inbox, AlertTriangle,
 } from "lucide-react"
+import type { Alerta } from "@/lib/alertas"
 import { Menu } from "@base-ui/react/menu"
 import { Dialog } from "@base-ui/react/dialog"
 import { Button } from "@/components/ui/button"
@@ -33,7 +34,10 @@ type TasksData = {
   tarjetas: TarjetaTask[]
   ventasSesiones: SesionTask[]
   contabilidadSesiones: SesionTask[]
+  alertas: Alerta[]
 }
+
+const DISMISSED_KEY = "rym-alertas-dismissed"
 
 type Kind = "conc" | "tarjeta" | "ventas" | "contab"
 type Activity = {
@@ -111,6 +115,23 @@ export function TasksPanel() {
   const [creating, setCreating] = useState<"conc" | "ventas" | "contab" | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [tarjetaOpen, setTarjetaOpen] = useState(false)
+  // Dismissal de alertas por localStorage. Init vacío + carga en useEffect para no
+  // romper la hidratación (localStorage no existe en el render de servidor).
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DISMISSED_KEY)
+      if (raw) setDismissed(new Set(JSON.parse(raw) as string[]))
+    } catch { /* localStorage inaccesible — mostrar todo */ }
+  }, [])
+  function dismissAlerta(id: string) {
+    setDismissed(prev => {
+      const next = new Set(prev).add(id)
+      try { localStorage.setItem(DISMISSED_KEY, JSON.stringify([...next])) } catch { /* ignore */ }
+      return next
+    })
+  }
+  const alertas = (data?.alertas ?? []).filter(a => !dismissed.has(a.id))
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -336,6 +357,46 @@ export function TasksPanel() {
 
       {/* Lista unificada */}
       <div className="flex-1 overflow-y-auto">
+        {alertas.length > 0 && (
+          <div className="border-b" style={{ borderColor: "var(--border)" }}>
+            <div className="flex items-center gap-1.5 px-4 py-2">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Alertas</span>
+              <span className="text-xs font-medium text-muted-foreground bg-muted rounded-full px-1.5 py-0.5">{alertas.length}</span>
+            </div>
+            {alertas.map(a => {
+              const isError = a.severidad === "error"
+              return (
+                <div
+                  key={a.id}
+                  className={cn(
+                    "flex items-start gap-2 px-4 py-2.5 border-b border-l-2",
+                    isError ? "border-l-destructive" : "border-l-amber-400",
+                  )}
+                  style={{ borderBottomColor: "var(--border)" }}
+                >
+                  <AlertTriangle className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", isError ? "text-destructive" : "text-amber-500")} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold truncate">{a.titulo}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{a.detalle}</p>
+                    {a.monto != null && (
+                      <span className={cn("text-[10px] font-medium", isError ? "text-destructive" : "text-foreground")}>{fmtMonto(a.monto)}</span>
+                    )}
+                  </div>
+                  <button
+                    className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => dismissAlerta(a.id)}
+                    aria-label={`Descartar alerta: ${a.titulo}`}
+                    title="Descartar"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
         {!data && (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />

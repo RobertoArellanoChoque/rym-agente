@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getPartidas, setPartidas, type Partida } from "@/lib/partidas/manager"
 import { requireOrgId } from "@/lib/auth/current-user"
+import { audit } from "@/lib/audit"
 
 export async function GET(req: NextRequest) {
   const bankId = req.nextUrl.searchParams.get("bankId")
@@ -30,6 +31,7 @@ export async function PUT(req: NextRequest) {
     }
     const orgId = await requireOrgId()
     await setPartidas(bankId, orgId, partidas)
+    await audit("editar_partidas", "banco", bankId, { count: partidas.length })
     return NextResponse.json({ ok: true })
   } catch (err) {
     if (err instanceof Error && err.message === "NO_ACTIVE_ORG") {

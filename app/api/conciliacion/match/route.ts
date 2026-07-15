@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { matches as matchesTable, conciliaciones } from "@/lib/db/schema"
 import { requireOrgId } from "@/lib/auth/current-user"
+import { audit } from "@/lib/audit"
 import { and, eq } from "drizzle-orm"
 
 export async function PATCH(req: NextRequest) {
@@ -34,7 +35,9 @@ export async function PATCH(req: NextRequest) {
     if (!match) return NextResponse.json({ error: "Match no encontrado" }, { status: 404 })
 
     const nuevoTipo = action === "confirm" ? "confirmed" : "rejected"
-    await db.update(matchesTable).set({ tipo: nuevoTipo }).where(eq(matchesTable.id, matchId))
+    await db.update(matchesTable).set({ tipo: nuevoTipo, origen: "manual" }).where(eq(matchesTable.id, matchId))
+
+    await audit("editar_match", "match", String(matchId), { tipo: nuevoTipo })
 
     return NextResponse.json({ ok: true, tipo: nuevoTipo })
   } catch (e) {

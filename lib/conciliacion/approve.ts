@@ -6,6 +6,7 @@ import { db } from "@/lib/db"
 import { conciliaciones } from "@/lib/db/schema"
 import { and, eq } from "drizzle-orm"
 import { currentUserId, requireOrgId } from "@/lib/auth/current-user"
+import { audit } from "@/lib/audit"
 
 export type ApproveResult =
   | {
@@ -46,6 +47,8 @@ export async function approveConciliacion(
   await db.update(conciliaciones)
     .set({ stage: "aprobada", updatedAt: new Date().toISOString(), updatedBy: await currentUserId() })
     .where(and(eq(conciliaciones.id, sessionId), eq(conciliaciones.orgId, orgId)))
+
+  await audit("aprobar_conciliacion", "conciliacion", sessionId, { saldoConciliado: session.saldoFinal })
 
   return {
     ok: true,

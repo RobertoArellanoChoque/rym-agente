@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { resumenTarjetas } from "@/lib/db/schema"
 import { and, eq } from "drizzle-orm"
 import { requireOrgId } from "@/lib/auth/current-user"
+import { audit } from "@/lib/audit"
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -53,6 +54,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
       .where(and(eq(resumenTarjetas.id, id), eq(resumenTarjetas.orgId, orgId)))
       .returning({ id: resumenTarjetas.id })
     if (deleted.length === 0) return NextResponse.json({ error: "No encontrado" }, { status: 404 })
+    await audit("borrar_resumen_tarjeta", "resumen_tarjeta", id)
     return NextResponse.json({ ok: true })
   } catch (e) {
     if (e instanceof Error && e.message === "NO_ACTIVE_ORG") {

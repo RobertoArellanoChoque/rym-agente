@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { cleanupSession, sessionExists } from "@/lib/sessions/manager"
 import { getConciliacion, removeConciliacion } from "@/lib/conciliacion/registry"
 import { requireOrgId } from "@/lib/auth/current-user"
+import { audit } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { movimientos, movimientosDiferidos } from "@/lib/db/schema"
 import { and, eq } from "drizzle-orm"
@@ -45,6 +46,8 @@ export async function DELETE(req: NextRequest) {
   }
 
   try { await removeConciliacion(sessionId, orgId) } catch { /* already gone */ }
+
+  await audit("borrar_conciliacion", "conciliacion", sessionId)
 
   if (!(await sessionExists(sessionId))) {
     return new NextResponse(null, { status: 204 }) // already gone, ok

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import { CheckCircle2, XCircle, AlertCircle, Download, Loader2, ArrowRightCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -70,6 +70,26 @@ export function ResultTable({ resultado, sessionId }: ResultTableProps) {
   )
   const confirmed = useMemo(() => matchesConOverrides.filter(m => m.tipo === "confirmed"), [matchesConOverrides])
   const probable = useMemo(() => matchesConOverrides.filter(m => m.tipo === "probable"), [matchesConOverrides])
+
+  // Revisión final: confirmed + probable con id persistido son los "en juego".
+  const revisables = useMemo(
+    () => [...confirmed, ...probable].filter(m => m.id !== undefined),
+    [confirmed, probable]
+  )
+  // Selección de matches que pasan a conciliado (confirmed pre-tildados, probable destildados).
+  // Re-inicializa cuando cambia el id-set de revisables (sesión distinta o re-comparar, que
+  // recrea filas de matches con ids nuevos) — sin esto, al cambiar de sesión el estado queda
+  // stale y "Aprobar" mandaría ids de otra sesión (se rechazarían TODOS los matches nuevos).
+  // Los toggles manuales dentro de la misma sesión no cambian el id-set, así que se preservan.
+  const [seleccionados, setSeleccionados] = useState<Set<number>>(new Set())
+  const [aprobando, setAprobando] = useState(false)
+  const firmaRevisables = revisables.map(m => m.id).join(",")
+  const firmaPrev = useRef<string | null>(null)
+  useEffect(() => {
+    if (firmaPrev.current === firmaRevisables) return
+    firmaPrev.current = firmaRevisables
+    setSeleccionados(new Set(confirmed.filter(m => m.id !== undefined).map(m => m.id as number)))
+  }, [firmaRevisables, confirmed])
 
   const prestamos = useMemo(
     () => agruparPrestamos(movimientos, matchesConOverrides, asientos),
@@ -195,6 +215,40 @@ export function ResultTable({ resultado, sessionId }: ResultTableProps) {
       toast.error("Error al contabilizar")
     } finally {
       setSaving(prev => { const n = new Set(prev); n.delete(-2); return n })
+    }
+  }
+
+  const aprobar = async (aceptarDiferencia = false): Promise<void> => {
+    if (!sessionId) return
+    setAprobando(true)
+    try {
+      const res = await fetch("/api/conciliacion/aprobar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, matchIdsConfirmados: [...seleccionados], aceptarDiferencia }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) {
+        toast.success("Conciliación aprobada")
+        window.dispatchEvent(new Event("tasks-refresh"))
+        window.location.reload()
+        return
+      }
+      // Diferencia residual: ofrecer reintento aceptando la diferencia.
+      if (data?.diferencia && !aceptarDiferencia) {
+        if (window.confirm(`Diferencia residual ${data.diferencia}. ${data.hint ?? ""}\n¿Aprobar igual?`)) {
+          await aprobar(true)
+          return
+        }
+        toast.error("Aprobación cancelada")
+        return
+      }
+      toast.error(data?.error ?? "No se pudo aprobar")
+    } catch (err) {
+      console.error("[ResultTable] aprobar error:", err)
+      toast.error("Error al aprobar")
+    } finally {
+      setAprobando(false)
     }
   }
 
@@ -488,6 +542,59 @@ export function ResultTable({ resultado, sessionId }: ResultTableProps) {
             </div>
         </div>
       </details>
+
+      {/* Revisión final: seleccionar el set de matches que pasa a conciliado */}
+      {sessionId && revisables.length > 0 && (
+        <>
+          <Separator />
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold">Revisión final</h3>
+            <p className="text-xs text-muted-foreground">
+              Seleccioná los ítems que pasan a conciliado. Los sugeridos por IA arrancan destildados.
+            </p>
+            <div className="rounded-lg border bg-card divide-y">
+              {revisables.map(m => {
+                const mov = movById.get(m.movimientoId)
+                const checked = seleccionados.has(m.id as number)
+                return (
+                  <div key={m.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                    <Checkbox
+                      checked={checked}
+                      disabled={aprobando}
+                      onCheckedChange={c =>
+                        setSeleccionados(prev => {
+                          const next = new Set(prev)
+                          if (c) next.add(m.id as number)
+                          else next.delete(m.id as number)
+                          return next
+                        })
+                      }
+                      aria-label={`Conciliar: ${mov?.descripcion ?? m.movimientoId}`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate" title={mov?.descripcion}>{mov?.descripcion ?? "—"}</div>
+                    </div>
+                    {m.tipo === "probable" && (
+                      <Badge variant="outline" className="text-xs shrink-0">IA {m.score}</Badge>
+                    )}
+                    <span className="tabular-nums font-medium shrink-0">{centavosAString(mov?.monto ?? 0)}</span>
+                  </div>
+                )
+              })}
+            </div>
+            <Button onClick={() => aprobar()} size="sm" disabled={aprobando}>
+              {aprobando ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Aprobando...
+                </>
+              ) : (
+                `Aprobar conciliación (${seleccionados.size} ítems)`
+              )}
+            </Button>
+          </div>
+        </>
+      )}
 
       <Separator />
 

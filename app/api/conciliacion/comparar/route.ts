@@ -11,8 +11,15 @@ import { generateJSONOpenAI } from "@/lib/ai/client"
 import { rateLimit, ipOf } from "@/lib/rate-limit"
 import { requireOrgId } from "@/lib/auth/current-user"
 import { db } from "@/lib/db"
-import { asientos as asientosTable, movimientosDiferidos } from "@/lib/db/schema"
-import { and, eq, inArray } from "drizzle-orm"
+import {
+  asientos as asientosTable,
+  movimientos as movimientosTable,
+  matches as matchesTable,
+  conciliaciones as conciliacionesTable,
+  movimientosDiferidos,
+} from "@/lib/db/schema"
+import { and, eq, inArray, desc } from "drizzle-orm"
+import { aprenderAliases, firmasRechazadas, type ContextoAprendizaje } from "@/lib/conciliacion/aliases"
 import type { Movimiento, Asiento, Match, Discrepancia } from "@/lib/types"
 
 const SugerenciaSchema = z.object({
@@ -91,8 +98,46 @@ export async function POST(req: NextRequest) {
     const partidas = bankId ? await getPartidas(bankId, orgId) : []
     const sumaPartidas = partidas.reduce((s, p) => s + p.monto, 0) + sumaDiferidos + sumaResueltos
 
+    // ── Contexto de aprendizaje: decisiones humanas (matches origen='manual') del
+    // mismo banco+org. Defensivo: si el aprendizaje falla, seguimos sin contexto
+    // (comportamiento idéntico al motor base). ──────────────────────────────
+    let contexto: ContextoAprendizaje | undefined
+    try {
+      if (bankId) {
+        const historial = await db
+          .select({
+            tipo: matchesTable.tipo,
+            descBanco: movimientosTable.descripcion,
+            descTango: asientosTable.descripcion,
+          })
+          .from(matchesTable)
+          .innerJoin(conciliacionesTable, eq(matchesTable.conciliacionId, conciliacionesTable.id))
+          .innerJoin(movimientosTable, eq(matchesTable.movimientoId, movimientosTable.id))
+          .innerJoin(asientosTable, eq(matchesTable.asientoId, asientosTable.id))
+          .where(and(
+            eq(matchesTable.origen, "manual"),
+            eq(conciliacionesTable.orgId, orgId),
+            eq(conciliacionesTable.bancoId, bankId),
+          ))
+          .orderBy(desc(matchesTable.id))
+          .limit(500)
+
+        const confirmados = historial.filter(h => h.tipo === "confirmed")
+        const rechazados = historial.filter(h => h.tipo === "rejected")
+        if (confirmados.length > 0 || rechazados.length > 0) {
+          contexto = {
+            aliases: aprenderAliases(confirmados),
+            rechazados: firmasRechazadas(rechazados),
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[comparar] learning context skipped:", err instanceof Error ? err.message : err)
+      contexto = undefined
+    }
+
     // ── FASE 1: matching determinístico ──────────────────────────────────
-    const fase1 = conciliar(movimientos, asientos, sumaPartidas)
+    const fase1 = conciliar(movimientos, asientos, sumaPartidas, contexto)
     const confirmedMovIds = new Set(fase1.matches.map(m => m.movimientoId))
     const confirmedAsiIds = new Set(fase1.matches.map(m => m.asientoId))
 

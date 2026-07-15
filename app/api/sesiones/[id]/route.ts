@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { sesiones } from "@/lib/db/schema"
 import { and, eq } from "drizzle-orm"
 import { currentUserId, requireOrgId } from "@/lib/auth/current-user"
+import { audit } from "@/lib/audit"
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -54,6 +55,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     const { id } = await params
     const orgId = await requireOrgId()
     await db.delete(sesiones).where(and(eq(sesiones.id, id), eq(sesiones.orgId, orgId)))
+    await audit("borrar_sesion", "sesion", id)
     return NextResponse.json({ ok: true })
   } catch (e) {
     console.error("[DELETE /api/sesiones/:id]", e)

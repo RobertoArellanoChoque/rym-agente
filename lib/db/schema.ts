@@ -79,6 +79,7 @@ export const matches = pgTable("matches", {
   score: integer("score").notNull(),
   motivo: text("motivo").notNull(),
   tipo: text("tipo").$type<MatchTipo>().notNull().default("confirmed"), // confirmed|probable|rejected
+  origen: text("origen").$type<"auto" | "manual">().notNull().default("auto"), // 'auto'=motor/IA · 'manual'=decisión humana (señal para matching inteligente)
   diferenciaMonto: centavos("diferencia_monto"),
   explicacion: text("explicacion"),
 }, (t) => [
@@ -86,6 +87,7 @@ export const matches = pgTable("matches", {
   index("matches_movimiento_id_idx").on(t.movimientoId),
   index("matches_asiento_id_idx").on(t.asientoId),
   check("matches_tipo_chk", inList("tipo", ["confirmed", "probable", "rejected"])),
+  check("matches_origen_chk", inList("origen", ["auto", "manual"])),
 ])
 
 export const discrepancias = pgTable("discrepancias", {
@@ -274,6 +276,22 @@ export const usoApi = pgTable("uso_api", {
   index("uso_api_ts_idx").on(t.ts),
   index("uso_api_org_id_ts_idx").on(t.orgId, t.ts),
   check("uso_api_provider_chk", inList("provider", ["anthropic", "mistral", "openai"])),
+])
+
+// Registro de auditoría append-only: quién hizo qué y cuándo (aprobar, editar match,
+// borrar, contabilizar...). Sin UI de consulta (YAGNI) — SQL directo cuando haga falta.
+export const auditLog = pgTable("audit_log", {
+  id: serial("id").primaryKey(),
+  ts: ts("ts").notNull(),
+  orgId: text("org_id"), // Clerk organization id (null si el write ocurrió fuera de contexto de request)
+  userId: text("user_id"), // Clerk userId del actor (null idem)
+  accion: text("accion").notNull(), // verbo: "aprobar_conciliacion", "editar_match", "borrar_sesion"...
+  entidad: text("entidad").notNull(), // tipo de entidad: "conciliacion", "match", "sesion"...
+  entidadId: text("entidad_id"), // id de la entidad afectada (nullable — ej reset global)
+  detalle: jsonb("detalle").notNull().default({}).$type<Record<string, unknown>>(),
+}, (t) => [
+  index("audit_log_org_id_ts_idx").on(t.orgId, t.ts),
+  index("audit_log_entidad_idx").on(t.entidad, t.entidadId),
 ])
 
 export const retenciones = pgTable("retenciones", {

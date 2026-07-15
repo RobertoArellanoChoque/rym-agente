@@ -4,6 +4,7 @@ import { discrepancias as discrepanciasTable, conciliaciones } from "@/lib/db/sc
 import { CATEGORIAS_DESTINO } from "@/lib/extractos/impuestos"
 import { and, eq } from "drizzle-orm"
 import { requireOrgId } from "@/lib/auth/current-user"
+import { audit } from "@/lib/audit"
 
 // Recategorizar (bucketOverride) y/o marcar para revisar una discrepancia.
 export async function PATCH(req: NextRequest) {
@@ -47,6 +48,8 @@ export async function PATCH(req: NextRequest) {
       .returning()
 
     if (!row) return NextResponse.json({ error: "Discrepancia no encontrada" }, { status: 404 })
+
+    await audit("editar_discrepancia", "discrepancia", String(discrepanciaId), { bucketOverride, revisar })
 
     return NextResponse.json({ ok: true, bucketOverride: row.bucketOverride, revisar: row.revisar ?? false })
   } catch (e) {

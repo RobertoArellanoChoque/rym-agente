@@ -4,11 +4,12 @@ import { conciliaciones, resumenTarjetas, sesiones } from "@/lib/db/schema"
 import { and, desc, eq, ne } from "drizzle-orm"
 import { approveConciliacion } from "@/lib/conciliacion/approve"
 import { requireOrgId } from "@/lib/auth/current-user"
+import { getAlertas } from "@/lib/alertas"
 
 export async function GET() {
   try {
     const orgId = await requireOrgId()
-    const [concs, tarjetas, ventasSesiones, contabilidadSesiones] = await Promise.all([
+    const [concs, tarjetas, ventasSesiones, contabilidadSesiones, alertas] = await Promise.all([
       db.select({
         id: conciliaciones.id,
         label: conciliaciones.label,
@@ -40,9 +41,11 @@ export async function GET() {
         estado: sesiones.estado,
         updatedAt: sesiones.updatedAt,
       }).from(sesiones).where(and(eq(sesiones.orgId, orgId), eq(sesiones.modulo, "contabilidad"))).orderBy(desc(sesiones.updatedAt)).limit(20),
+
+      getAlertas(orgId),
     ])
 
-    return NextResponse.json({ conciliaciones: concs, tarjetas, ventasSesiones, contabilidadSesiones })
+    return NextResponse.json({ conciliaciones: concs, tarjetas, ventasSesiones, contabilidadSesiones, alertas })
   } catch (e) {
     console.error("[GET /api/tasks]", e)
     return NextResponse.json({ error: "Error interno" }, { status: 500 })
