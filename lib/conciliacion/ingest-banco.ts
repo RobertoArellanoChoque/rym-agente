@@ -16,8 +16,9 @@ import { setSaldo } from "@/lib/saldos/manager"
 import { upsertConciliacion } from "@/lib/conciliacion/registry"
 import { periodoDeFechas, nombreMes } from "@/lib/conciliacion/periodo"
 import { db } from "@/lib/db"
-import { movimientos as movimientosTable } from "@/lib/db/schema"
+import { movimientos as movimientosTable, conciliaciones } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
+import { requireOrgId } from "@/lib/auth/current-user"
 import type { BankDetectionResult, Categoria } from "@/lib/types"
 import { toCentavos } from "@/lib/utils"
 
@@ -180,6 +181,16 @@ export async function extraerBanco(buffer: ArrayBuffer, filename: string): Promi
 
 /** Persiste un extracto extraído en una sesión existente. */
 export async function persistBanco(sessionId: string, ext: ExtractoBanco): Promise<void> {
+  const orgId = await requireOrgId()
+  // Defensivo: si la sesión ya fue creada por otra org (p.ej. sessionId adivinado/reusado),
+  // cortar antes de escribir nada. sessionExists() (lib/sessions/manager.ts) no filtra por
+  // org todavía — este chequeo es la última línea de defensa acá.
+  const [existing] = await db.select({ orgId: conciliaciones.orgId }).from(conciliaciones)
+    .where(eq(conciliaciones.id, sessionId)).limit(1)
+  if (existing?.orgId && existing.orgId !== orgId) {
+    throw new Error("La sesión pertenece a otra organización")
+  }
+
   if (ext.markdown) {
     const sessionDir = getSessionDir(sessionId)
     await fs.mkdir(sessionDir, { recursive: true })
@@ -202,7 +213,7 @@ export async function persistBanco(sessionId: string, ext: ExtractoBanco): Promi
     const ultimo = sorted[sorted.length - 1]
     const ultimoSaldo = ext.saldoFinal ?? ultimo.saldo ?? ext.movimientos.reduce((s, m) => s + m.monto, 0)
     try {
-      await setSaldo(ext.bankResult.bankId, {
+      await setSaldo(ext.bankResult.bankId, orgId, {
         bankName: ext.bankResult.bankName, ultimoSaldo, ultimaFecha: ultimo.fecha,
         updatedAt: new Date().toISOString(), updatedBy: "auto",
       })
@@ -215,5 +226,5 @@ export async function persistBanco(sessionId: string, ext: ExtractoBanco): Promi
     periodo: ext.periodo, saldoAnterior: ext.saldoAnterior, saldoFinal: ext.saldoFinal,
     movimientosCount: ext.movimientos.length,
     ...(ext.autoLabel && { label: ext.autoLabel }),
-  })
+  }, orgId)
 }

@@ -6,6 +6,7 @@ import { upsertConciliacion, getConciliacion } from "@/lib/conciliacion/registry
 import { reemplazarMatchesYDiscrepancias } from "@/lib/conciliacion/persist"
 import { rowToAsiento } from "@/lib/conciliacion/mappers"
 import { cargarMovimientosActivos } from "@/lib/conciliacion/movimientos-activos"
+import { requireOrgId } from "@/lib/auth/current-user"
 import crypto from "crypto"
 import type { Movimiento, Asiento } from "@/lib/types"
 
@@ -18,7 +19,9 @@ export type ContabilizarResult =
 async function cargarParaContabilizar(
   sessionId: string
 ): Promise<{ error: string } | { movimientos: Movimiento[]; asientos: Asiento[]; sumaDiferidos: number }> {
-  const session = await getConciliacion(sessionId)
+  const orgId = await requireOrgId()
+
+  const session = await getConciliacion(sessionId, orgId)
   if (!session) return { error: "Sesión no encontrada" }
   if (session.stage !== "done") return { error: `Stage actual: ${session.stage}. Ejecutá el matching primero.` }
 
@@ -38,6 +41,7 @@ async function cargarParaContabilizar(
  * (click humano), nunca desde el agente LLM. Ver /cso F1.
  */
 export async function contabilizarPendientes(sessionId: string): Promise<ContabilizarResult> {
+  const orgId = await requireOrgId()
   const datos = await cargarParaContabilizar(sessionId)
   if ("error" in datos) return datos
   const { movimientos, asientos, sumaDiferidos } = datos
@@ -94,7 +98,7 @@ export async function contabilizarPendientes(sessionId: string): Promise<Contabi
       asientosCount: asientosDespues.length,
       saldoMayor: despues.saldoMayor,
       diferencia: despues.diferencia,
-    }, tx)
+    }, orgId, tx)
   })
 
   return {

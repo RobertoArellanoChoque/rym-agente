@@ -9,6 +9,7 @@ import { cargarMovimientosActivos } from "@/lib/conciliacion/movimientos-activos
 import { getPartidas } from "@/lib/partidas/manager"
 import { generateJSONOpenAI } from "@/lib/ai/client"
 import { rateLimit, ipOf } from "@/lib/rate-limit"
+import { requireOrgId } from "@/lib/auth/current-user"
 import { db } from "@/lib/db"
 import { asientos as asientosTable, movimientosDiferidos } from "@/lib/db/schema"
 import { and, eq, inArray } from "drizzle-orm"
@@ -32,16 +33,30 @@ export async function POST(req: NextRequest) {
 
   if (!sessionId) return NextResponse.json({ error: "sessionId requerido" }, { status: 400 })
 
+  let orgId: string
+  try {
+    orgId = await requireOrgId()
+  } catch {
+    return NextResponse.json({ error: "Organización requerida" }, { status: 403 })
+  }
+
   try {
     if (!(await sessionExists(sessionId))) {
       return NextResponse.json({ error: "Sesión no encontrada o expirada" }, { status: 404 })
     }
 
-    // Load from DB — 3 lecturas independientes por sessionId, en paralelo
-    const [movActivos, asientosRows, conc] = await Promise.all([
+    // Ownership check PRIMERO y en serie (no en el Promise.all de abajo): movimientos/
+    // asientos se cargan por sessionId sin filtro propio de orgId (confían en el caller),
+    // así que si no cortamos acá antes de leerlos, un sessionId de otra org devolvería
+    // sus movimientos/asientos y — peor — reemplazarMatchesYDiscrepancias + upsertConciliacion
+    // más abajo reescribirían los datos de esa org.
+    const conc = await getConciliacion(sessionId, orgId)
+    if (!conc) return NextResponse.json({ error: "Conciliación no encontrada" }, { status: 404 })
+
+    // Load from DB — 2 lecturas independientes por sessionId, en paralelo
+    const [movActivos, asientosRows] = await Promise.all([
       cargarMovimientosActivos(sessionId),
       db.select().from(asientosTable).where(eq(asientosTable.conciliacionId, sessionId)),
-      getConciliacion(sessionId),
     ])
     const { movimientos: movimientosActivos, sumaDiferidos } = movActivos
 
@@ -73,7 +88,7 @@ export async function POST(req: NextRequest) {
     const movimientos: Movimiento[] = movimientosActivos.filter(m => !resueltosIds.has(m.id))
 
     const bankId = conc?.bankId ?? ""
-    const partidas = bankId ? await getPartidas(bankId) : []
+    const partidas = bankId ? await getPartidas(bankId, orgId) : []
     const sumaPartidas = partidas.reduce((s, p) => s + p.monto, 0) + sumaDiferidos + sumaResueltos
 
     // ── FASE 1: matching determinístico ──────────────────────────────────
@@ -157,7 +172,7 @@ Para cada movimiento bancario, buscá el asiento de Tango que probablemente sea 
       saldoBanco: resultado.saldoBanco, // neto período (ver calcularFinanzas)
       saldoMayor: resultado.saldoMayor, // neto período — sobrescribe el cierre del stage tango
       diferencia: resultado.diferencia,
-    })
+    }, orgId)
 
     return NextResponse.json(resultado)
   } catch (err) {

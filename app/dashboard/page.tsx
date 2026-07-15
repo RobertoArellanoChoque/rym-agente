@@ -3,7 +3,8 @@ import { db } from "@/lib/db"
 import { conciliaciones, resumenTarjetas, movimientos, usoApi } from "@/lib/db/schema"
 import { getSaldos } from "@/lib/saldos/manager"
 import { centavosAString } from "@/lib/conciliacion/matching"
-import { sql, notInArray } from "drizzle-orm"
+import { requireOrgId } from "@/lib/auth/current-user"
+import { and, eq, inArray, sql, notInArray } from "drizzle-orm"
 
 // Lee la DB en cada request — no prerenderizar en build
 export const dynamic = "force-dynamic"
@@ -38,6 +39,9 @@ function MetricCard({
 }
 
 export default async function DashboardPage() {
+  const orgId = await requireOrgId()
+  const conciliacionesDeLaOrg = db.select({ id: conciliaciones.id }).from(conciliaciones).where(eq(conciliaciones.orgId, orgId))
+
   // Server component — todas las lecturas independientes corren en paralelo
   // (cada una es un round-trip a Supabase; en serie pagábamos N×RTT)
   const [
@@ -50,21 +54,22 @@ export default async function DashboardPage() {
     usoPorModelo,
     usoPorDia,
   ] = await Promise.all([
-    db.select().from(conciliaciones),
-    db.$count(resumenTarjetas),
-    db.$count(movimientos),
-    getSaldos(),
+    db.select().from(conciliaciones).where(eq(conciliaciones.orgId, orgId)),
+    db.$count(resumenTarjetas, eq(resumenTarjetas.orgId, orgId)),
+    // movimientos no tiene orgId propio (hijo de conciliaciones) — se scopea vía conciliacionId
+    db.$count(movimientos, inArray(movimientos.conciliacionId, conciliacionesDeLaOrg)),
+    getSaldos(orgId),
     db.select({
       bancoId: conciliaciones.bancoId,
       label: conciliaciones.label,
       // "aprobada" es terminal (más que done): no cuenta como en-proceso.
-    }).from(conciliaciones).where(notInArray(conciliaciones.stage, ["done", "aprobada"])),
+    }).from(conciliaciones).where(and(eq(conciliaciones.orgId, orgId), notInArray(conciliaciones.stage, ["done", "aprobada"]))),
     db.select({
       tokensIn: sql<number>`COALESCE(SUM(tokens_in), 0)::bigint`.mapWith(Number),
       tokensOut: sql<number>`COALESCE(SUM(tokens_out), 0)::bigint`.mapWith(Number),
       costoUsd: sql<number>`COALESCE(SUM(costo_usd), 0)::bigint`.mapWith(Number),
       llamadas: sql<number>`COUNT(*)::int`,
-    }).from(usoApi),
+    }).from(usoApi).where(eq(usoApi.orgId, orgId)),
     db.select({
       provider: usoApi.provider,
       modelo: usoApi.modelo,
@@ -72,14 +77,14 @@ export default async function DashboardPage() {
       tokensOut: sql<number>`COALESCE(SUM(tokens_out), 0)::bigint`.mapWith(Number),
       costoUsd: sql<number>`COALESCE(SUM(costo_usd), 0)::bigint`.mapWith(Number),
       llamadas: sql<number>`COUNT(*)::int`,
-    }).from(usoApi).groupBy(usoApi.provider, usoApi.modelo).orderBy(sql`SUM(costo_usd) DESC`),
+    }).from(usoApi).where(eq(usoApi.orgId, orgId)).groupBy(usoApi.provider, usoApi.modelo).orderBy(sql`SUM(costo_usd) DESC`),
     // ts es timestamptz nativo — se agrupa por día
     db.select({
       dia: sql<string>`DATE(ts)::text`,
       costoUsd: sql<number>`COALESCE(SUM(costo_usd), 0)::bigint`.mapWith(Number),
       tokensTotal: sql<number>`COALESCE(SUM(tokens_in + tokens_out), 0)::bigint`.mapWith(Number),
     }).from(usoApi)
-      .where(sql`ts >= now() - interval '6 days'`)
+      .where(and(eq(usoApi.orgId, orgId), sql`ts >= now() - interval '6 days'`))
       .groupBy(sql`DATE(ts)`)
       .orderBy(sql`DATE(ts)`),
   ])

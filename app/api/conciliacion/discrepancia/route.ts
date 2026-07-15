@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
-import { discrepancias as discrepanciasTable } from "@/lib/db/schema"
+import { discrepancias as discrepanciasTable, conciliaciones } from "@/lib/db/schema"
 import { CATEGORIAS_DESTINO } from "@/lib/extractos/impuestos"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
+import { requireOrgId } from "@/lib/auth/current-user"
 
 // Recategorizar (bucketOverride) y/o marcar para revisar una discrepancia.
 export async function PATCH(req: NextRequest) {
@@ -25,6 +26,17 @@ export async function PATCH(req: NextRequest) {
     if (bucketOverride && !CATEGORIAS_DESTINO.includes(bucketOverride))
       return NextResponse.json({ error: "bucketOverride inválido" }, { status: 400 })
 
+    const orgId = await requireOrgId()
+
+    // discrepancias no tiene orgId propio (tabla hija) — confirmar pertenencia vía su
+    // conciliación padre antes de aplicar el PATCH.
+    const [owned] = await db.select({ id: discrepanciasTable.id })
+      .from(discrepanciasTable)
+      .innerJoin(conciliaciones, eq(discrepanciasTable.conciliacionId, conciliaciones.id))
+      .where(and(eq(discrepanciasTable.id, discrepanciaId), eq(conciliaciones.orgId, orgId)))
+      .limit(1)
+    if (!owned) return NextResponse.json({ error: "Discrepancia no encontrada" }, { status: 404 })
+
     const patch: { bucketOverride?: string | null; revisar?: boolean } = {}
     if (bucketOverride !== undefined) patch.bucketOverride = bucketOverride || null
     if (revisar !== undefined) patch.revisar = revisar
@@ -38,6 +50,9 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({ ok: true, bucketOverride: row.bucketOverride, revisar: row.revisar ?? false })
   } catch (e) {
+    if (e instanceof Error && e.message === "NO_ACTIVE_ORG") {
+      return NextResponse.json({ error: "No hay organización activa" }, { status: 403 })
+    }
     console.error("[PATCH /api/conciliacion/discrepancia]", e)
     return NextResponse.json({ error: "Error interno" }, { status: 500 })
   }

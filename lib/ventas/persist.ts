@@ -6,7 +6,13 @@ import type { PagoResult } from "@/lib/ventas/extractor"
 // Extraído de app/api/orchestrator/upload/route.ts (handlePago) para reusar
 // desde el sync de Google Drive. Comportamiento idéntico al original: retención +
 // ítems en una transacción.
-export async function persistPago(pago: PagoResult, createdBy: string | null): Promise<string> {
+// orgId opcional: callers sin contexto de request (drive-sync, orchestrator/upload)
+// todavía no lo pasan — orgId queda null hasta que se migren.
+export async function persistPago(
+  pago: PagoResult,
+  createdBy: string | null,
+  orgId: string | null = null
+): Promise<string> {
   const retencionId = crypto.randomUUID()
 
   await db.transaction(async (tx) => {
@@ -21,6 +27,7 @@ export async function persistPago(pago: PagoResult, createdBy: string | null): P
       montoNeto: pago.montoNeto,
       creadoEn: new Date().toISOString(),
       createdBy,
+      orgId,
     })
     if (pago.retenciones.length) {
       await tx.insert(retencionItems).values(

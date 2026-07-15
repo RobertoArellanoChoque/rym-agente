@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { tarjetasMaestras } from "@/lib/db/schema"
 
@@ -15,8 +16,8 @@ const BANCO_ALIASES: Record<string, string[]> = {
   FCES: ["FCES", "FUERZAS", "FUERZAS COMPLEMENTARIAS"],
 }
 
-export async function matchTarjeta(text: string): Promise<{ tarjeta: TarjetaMaestraRow | null; confidence: number }> {
-  const all = await db.select().from(tarjetasMaestras) as TarjetaMaestraRow[]
+export async function matchTarjeta(text: string, orgId: string): Promise<{ tarjeta: TarjetaMaestraRow | null; confidence: number }> {
+  const all = await db.select().from(tarjetasMaestras).where(eq(tarjetasMaestras.orgId, orgId)) as TarjetaMaestraRow[]
   if (!all.length) return { tarjeta: null, confidence: 0 }
 
   const up = text.toUpperCase()

@@ -6,7 +6,8 @@ import { db } from "@/lib/db"
 import { conciliaciones } from "@/lib/db/schema"
 import { rowToAsiento } from "@/lib/conciliacion/mappers"
 import { cargarMovimientosActivos } from "@/lib/conciliacion/movimientos-activos"
-import { eq } from "drizzle-orm"
+import { requireOrgId } from "@/lib/auth/current-user"
+import { and, eq } from "drizzle-orm"
 import type { Asiento, Match, Discrepancia } from "@/lib/types"
 
 // Reconstruye el estado completo de una conciliación desde la DB.
@@ -14,10 +15,17 @@ export async function GET(req: NextRequest) {
   const sessionId = req.nextUrl.searchParams.get("sessionId")
   if (!sessionId) return NextResponse.json({ error: "sessionId requerido" }, { status: 400 })
 
+  let orgId: string
+  try {
+    orgId = await requireOrgId()
+  } catch {
+    return NextResponse.json({ error: "Organización requerida" }, { status: 403 })
+  }
+
   const [entry, conc, { movimientos, sumaDiferidos }] = await Promise.all([
-    getConciliacion(sessionId),
+    getConciliacion(sessionId, orgId),
     db.query.conciliaciones.findFirst({
-      where: eq(conciliaciones.id, sessionId),
+      where: and(eq(conciliaciones.id, sessionId), eq(conciliaciones.orgId, orgId)),
       with: {
         asientos: true,
         matches: true,
@@ -57,7 +65,7 @@ export async function GET(req: NextRequest) {
   let resultado = null
   if (entry.stage === "done" && entry.saldoBanco != null) {
     const bankId = entry.bankId ?? ""
-    const partidas = bankId ? await getPartidas(bankId) : []
+    const partidas = bankId ? await getPartidas(bankId, orgId) : []
     const sumaPartidas = partidas.reduce((s, p) => s + p.monto, 0) + sumaDiferidos
 
     const confirmedAndProbableMatches = matches.filter(m => m.tipo !== "rejected")

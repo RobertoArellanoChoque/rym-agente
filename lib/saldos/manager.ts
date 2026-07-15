@@ -1,6 +1,6 @@
 import { db } from "@/lib/db"
 import { saldosBanco } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { currentUserId } from "@/lib/auth/current-user"
 
 export type SaldoBanco = {
@@ -27,12 +27,12 @@ function rowToSaldo(row: typeof saldosBanco.$inferSelect): SaldoBanco {
   }
 }
 
-export async function getSaldos(): Promise<Record<string, SaldoBanco>> {
-  const rows = await db.select().from(saldosBanco)
+export async function getSaldos(orgId: string): Promise<Record<string, SaldoBanco>> {
+  const rows = await db.select().from(saldosBanco).where(eq(saldosBanco.orgId, orgId))
   return Object.fromEntries(rows.map(r => [r.bancoId, rowToSaldo(r)]))
 }
 
-export async function setSaldo(bankId: string, data: Omit<SaldoBanco, "bankId">): Promise<void> {
+export async function setSaldo(bankId: string, orgId: string, data: Omit<SaldoBanco, "bankId">): Promise<void> {
   const row = {
     bancoId: bankId,
     bancoNombre: data.bankName,
@@ -43,17 +43,18 @@ export async function setSaldo(bankId: string, data: Omit<SaldoBanco, "bankId">)
     updatedByUser: await currentUserId(), // updatedBy de arriba es flag auto|manual; este es el Clerk userId
     saldoConciliado: data.saldoConciliado,
     fechaConciliacion: data.fechaConciliacion,
+    orgId,
   }
   await db.insert(saldosBanco)
     .values(row)
-    .onConflictDoUpdate({ target: saldosBanco.bancoId, set: row })
+    .onConflictDoUpdate({ target: [saldosBanco.orgId, saldosBanco.bancoId], set: row })
 }
 
-export async function patchSaldo(bankId: string, patch: { saldoConciliado: number; fechaConciliacion: string }): Promise<void> {
+export async function patchSaldo(bankId: string, orgId: string, patch: { saldoConciliado: number; fechaConciliacion: string }): Promise<void> {
   await db.update(saldosBanco).set({
     saldoConciliado: patch.saldoConciliado,
     fechaConciliacion: patch.fechaConciliacion,
     updatedAt: new Date().toISOString(),
     updatedByUser: await currentUserId(),
-  }).where(eq(saldosBanco.bancoId, bankId))
+  }).where(and(eq(saldosBanco.bancoId, bankId), eq(saldosBanco.orgId, orgId)))
 }

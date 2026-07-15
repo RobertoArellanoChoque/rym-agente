@@ -29,6 +29,20 @@
       "when": 1784065836126,
       "tag": "0003_naive_rafael_vega",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784073993063,
+      "tag": "0004_slim_paladin",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784075573793,
+      "tag": "0005_moaning_quentin_quire",
+      "breakpoints": true
     }
   ]
 }

@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ArrowLeftRight, ShoppingCart, Truck, BookOpen, LayoutDashboard, Bot, ChevronRight, User } from "lucide-react"
-import { UserButton } from "@clerk/nextjs"
+import { UserButton, OrganizationSwitcher } from "@clerk/nextjs"
 import { useAgentActivity } from "@/lib/context/agent-activity-context"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 
@@ -68,6 +68,23 @@ export function IconRail() {
           )
         })}
       </nav>
+
+      {/* Organización */}
+      <div className="flex items-center h-11 shrink-0 px-3.5 gap-2.5 overflow-hidden">
+        <OrganizationSwitcher
+          hidePersonal
+          afterSelectOrganizationUrl="/"
+          appearance={{
+            elements: {
+              rootBox: "flex items-center",
+              organizationSwitcherTrigger: "gap-2 rounded-lg border-0 bg-transparent p-0.5 shadow-none hover:bg-sidebar-accent",
+              organizationPreviewAvatarBox: "h-5 w-5",
+              organizationPreviewMainIdentifier: expanded ? "text-[11px] text-sidebar-foreground" : "hidden",
+              organizationSwitcherTriggerIcon: expanded ? "text-sidebar-foreground" : "hidden",
+            },
+          }}
+        />
+      </div>
 
       {/* User */}
       <div className="flex items-center h-11 shrink-0 px-3.5 gap-2.5 overflow-hidden">

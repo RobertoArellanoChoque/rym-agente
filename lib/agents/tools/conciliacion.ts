@@ -5,7 +5,8 @@ import { getSaldos } from "@/lib/saldos/manager"
 import { getPartidas } from "@/lib/partidas/manager"
 import { db } from "@/lib/db"
 import { conciliaciones } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
+import { requireOrgId } from "@/lib/auth/current-user"
 import { explicarGap } from "@/lib/conciliacion/explicar-gap"
 import { agruparPrestamos } from "@/lib/conciliacion/prestamos"
 import { centavosAString } from "@/lib/conciliacion/matching"
@@ -16,7 +17,7 @@ export const conciliacionTools = {
     description:
       "Lista todas las sesiones de conciliación bancaria con su estado, banco, fechas y diferencia.",
     inputSchema: z.object({}),
-    execute: async () => listConciliaciones(),
+    execute: async () => listConciliaciones(await requireOrgId()),
   }),
 
   ver_sesion: tool({
@@ -25,14 +26,14 @@ export const conciliacionTools = {
     inputSchema: z.object({
       sessionId: z.string().describe("ID UUID de la sesión de conciliación"),
     }),
-    execute: async ({ sessionId }) => getConciliacion(sessionId),
+    execute: async ({ sessionId }) => getConciliacion(sessionId, await requireOrgId()),
   }),
 
   ver_saldos: tool({
     description:
       "Devuelve los saldos bancarios registrados por banco (último saldo, fecha, saldo conciliado).",
     inputSchema: z.object({}),
-    execute: async () => getSaldos(),
+    execute: async () => getSaldos(await requireOrgId()),
   }),
 
   ver_partidas: tool({
@@ -41,7 +42,7 @@ export const conciliacionTools = {
     inputSchema: z.object({
       bankId: z.string().describe("Identificador del banco, ej: 'bbva', 'galicia'"),
     }),
-    execute: async ({ bankId }) => getPartidas(bankId),
+    execute: async ({ bankId }) => getPartidas(bankId, await requireOrgId()),
   }),
 
   explicar_diferencia: tool({
@@ -51,14 +52,15 @@ export const conciliacionTools = {
       sessionId: z.string().describe("ID UUID de la sesión de conciliación"),
     }),
     execute: async ({ sessionId }) => {
-      const session = await getConciliacion(sessionId)
+      const orgId = await requireOrgId()
+      const session = await getConciliacion(sessionId, orgId)
       if (!session) return { error: "Sesión no encontrada" }
       if (session.stage !== "done") {
         return { error: `Stage actual: ${session.stage}. Ejecutá el matching primero (ejecutar_matching).` }
       }
 
       const conc = await db.query.conciliaciones.findFirst({
-        where: eq(conciliaciones.id, sessionId),
+        where: and(eq(conciliaciones.id, sessionId), eq(conciliaciones.orgId, orgId)),
         with: {
           movimientos: true,
           matches: true,
@@ -80,7 +82,7 @@ export const conciliacionTools = {
         grupoId: d.movimiento?.grupoId ?? undefined,
       }))
 
-      const partidas = session.bankId ? await getPartidas(session.bankId) : []
+      const partidas = session.bankId ? await getPartidas(session.bankId, orgId) : []
       const sumaPartidas = partidas.reduce((s, p) => s + p.monto, 0)
       const gapBruto = (session.saldoBanco ?? 0) - (session.saldoMayor ?? 0)
 

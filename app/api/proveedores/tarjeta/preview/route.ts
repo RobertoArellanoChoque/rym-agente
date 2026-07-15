@@ -3,11 +3,13 @@ import { procesarExtractoTarjeta } from "@/lib/tarjetas/extractor"
 import { matchTarjeta } from "@/lib/tarjetas/matcher"
 import { toCentavos, MAX_UPLOAD_BYTES } from "@/lib/utils"
 import { rateLimit, ipOf } from "@/lib/rate-limit"
+import { requireOrgId } from "@/lib/auth/current-user"
 
 export async function POST(req: NextRequest) {
   if (!(await rateLimit(`upload:${ipOf(req)}`, 10, 60_000)))
     return NextResponse.json({ error: "Demasiadas solicitudes, esperá un momento" }, { status: 429 })
   try {
+    const orgId = await requireOrgId()
     // Las tarjetas maestras viven en Supabase (sembrar con `npm run db:seed`).
     const form = await req.formData()
     const file = form.get("file") as File | null
@@ -40,7 +42,8 @@ export async function POST(req: NextRequest) {
 
     // Match against catalog using both AI-extracted name and raw markdown
     const { tarjeta: tarjetaDetectada, confidence } = await matchTarjeta(
-      `${result.nombreTarjeta} ${markdown}`
+      `${result.nombreTarjeta} ${markdown}`,
+      orgId
     )
 
     const lineasConCentavos = result.lineas.map((l) => ({
@@ -66,6 +69,9 @@ export async function POST(req: NextRequest) {
       rawLineas: lineasConCentavos,
     })
   } catch (e: unknown) {
+    if (e instanceof Error && e.message === "NO_ACTIVE_ORG") {
+      return NextResponse.json({ error: "No hay organización activa" }, { status: 403 })
+    }
     console.error("[POST /api/proveedores/tarjeta/preview]", e)
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
   }

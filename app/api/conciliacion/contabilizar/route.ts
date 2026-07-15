@@ -11,6 +11,9 @@ export async function POST(req: NextRequest) {
     if ("error" in result) return NextResponse.json(result, { status: 400 })
     return NextResponse.json(result)
   } catch (e) {
+    if (e instanceof Error && e.message === "NO_ACTIVE_ORG") {
+      return NextResponse.json({ error: "No hay organización activa" }, { status: 403 })
+    }
     console.error("[POST /api/conciliacion/contabilizar]", e)
     return NextResponse.json({ error: "Error interno" }, { status: 500 })
   }

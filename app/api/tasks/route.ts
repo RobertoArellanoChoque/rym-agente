@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { conciliaciones, resumenTarjetas, sesiones } from "@/lib/db/schema"
-import { desc, eq, ne } from "drizzle-orm"
+import { and, desc, eq, ne } from "drizzle-orm"
 import { approveConciliacion } from "@/lib/conciliacion/approve"
+import { requireOrgId } from "@/lib/auth/current-user"
 
 export async function GET() {
   try {
+    const orgId = await requireOrgId()
     const [concs, tarjetas, ventasSesiones, contabilidadSesiones] = await Promise.all([
       db.select({
         id: conciliaciones.id,
@@ -15,7 +17,7 @@ export async function GET() {
         diferencia: conciliaciones.diferencia,
         movimientosCount: conciliaciones.movimientosCount,
         updatedAt: conciliaciones.updatedAt,
-      }).from(conciliaciones).where(ne(conciliaciones.stage, "aprobada")).orderBy(desc(conciliaciones.updatedAt)).limit(20),
+      }).from(conciliaciones).where(and(eq(conciliaciones.orgId, orgId), ne(conciliaciones.stage, "aprobada"))).orderBy(desc(conciliaciones.updatedAt)).limit(20),
 
       db.select({
         id: resumenTarjetas.id,
@@ -23,21 +25,21 @@ export async function GET() {
         periodo: resumenTarjetas.periodo,
         totalMonto: resumenTarjetas.totalMonto,
         creadoEn: resumenTarjetas.creadoEn,
-      }).from(resumenTarjetas).orderBy(desc(resumenTarjetas.creadoEn)).limit(20),
+      }).from(resumenTarjetas).where(eq(resumenTarjetas.orgId, orgId)).orderBy(desc(resumenTarjetas.creadoEn)).limit(20),
 
       db.select({
         id: sesiones.id,
         label: sesiones.label,
         estado: sesiones.estado,
         updatedAt: sesiones.updatedAt,
-      }).from(sesiones).where(eq(sesiones.modulo, "ventas")).orderBy(desc(sesiones.updatedAt)).limit(20),
+      }).from(sesiones).where(and(eq(sesiones.orgId, orgId), eq(sesiones.modulo, "ventas"))).orderBy(desc(sesiones.updatedAt)).limit(20),
 
       db.select({
         id: sesiones.id,
         label: sesiones.label,
         estado: sesiones.estado,
         updatedAt: sesiones.updatedAt,
-      }).from(sesiones).where(eq(sesiones.modulo, "contabilidad")).orderBy(desc(sesiones.updatedAt)).limit(20),
+      }).from(sesiones).where(and(eq(sesiones.orgId, orgId), eq(sesiones.modulo, "contabilidad"))).orderBy(desc(sesiones.updatedAt)).limit(20),
     ])
 
     return NextResponse.json({ conciliaciones: concs, tarjetas, ventasSesiones, contabilidadSesiones })

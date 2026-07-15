@@ -1,7 +1,16 @@
-import { User, Mail, Calendar, UserRound, Clock, ShieldCheck, Shield } from "lucide-react"
-import { currentUser } from "@clerk/nextjs/server"
+import { User, Mail, Calendar, UserRound, Clock, ShieldCheck, Shield, Building2 } from "lucide-react"
+import { auth, clerkClient, currentUser } from "@clerk/nextjs/server"
 import { Badge } from "@/components/ui/badge"
 import { SignOutButton } from "./sign-out-button"
+
+const ROL_LABELS: Record<string, string> = { admin: "Administrador", member: "Miembro" }
+
+// orgRole viene como "org:admin" / "org:member" (o una key de rol custom).
+function formatRol(orgRole: string | null | undefined) {
+  if (!orgRole) return null
+  const key = orgRole.replace(/^org:/, "")
+  return ROL_LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1)
+}
 
 // Lee la sesión de Clerk en cada request — no prerenderizar en build
 export const dynamic = "force-dynamic"
@@ -38,6 +47,19 @@ export default async function PerfilPage() {
   const esAdmin = user.publicMetadata?.role === "admin"
   const nombreApellido = [user.firstName, user.lastName].filter(Boolean).join(" ")
   const ultimoIngreso = user.lastSignInAt ? new Date(user.lastSignInAt).toLocaleString("es-AR") : null
+
+  const { orgId, orgRole } = await auth()
+  const rolOrg = formatRol(orgRole)
+  let nombreOrg: string | null = null
+  if (orgId) {
+    try {
+      const client = await clerkClient()
+      const org = await client.organizations.getOrganization({ organizationId: orgId })
+      nombreOrg = org.name
+    } catch {
+      // best-effort: si falla, se omite la fila en vez de romper la página
+    }
+  }
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -85,6 +107,8 @@ export default async function PerfilPage() {
               {nombreApellido && <Dato icon={UserRound} label="Nombre y apellido" value={nombreApellido} />}
               <Dato icon={Calendar} label="Alta" value={alta} />
               {ultimoIngreso && <Dato icon={Clock} label="Último ingreso" value={ultimoIngreso} />}
+              {nombreOrg && <Dato icon={Building2} label="Organización" value={nombreOrg} />}
+              {rolOrg && <Dato icon={Shield} label="Rol en la organización" value={rolOrg} />}
             </div>
           </div>
 

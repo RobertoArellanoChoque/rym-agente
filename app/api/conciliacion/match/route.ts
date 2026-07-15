@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
-import { matches as matchesTable } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { matches as matchesTable, conciliaciones } from "@/lib/db/schema"
+import { requireOrgId } from "@/lib/auth/current-user"
+import { and, eq } from "drizzle-orm"
 
 export async function PATCH(req: NextRequest) {
   try {
+    let orgId: string
+    try {
+      orgId = await requireOrgId()
+    } catch {
+      return NextResponse.json({ error: "Organización requerida" }, { status: 403 })
+    }
+
     const body = await req.json().catch(() => ({}))
     const { matchId, action } = body as { matchId?: number; action?: "confirm" | "reject" }
 
@@ -15,7 +23,14 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "action debe ser 'confirm' o 'reject'" }, { status: 400 })
     }
 
-    const [match] = await db.select().from(matchesTable).where(eq(matchesTable.id, matchId)).limit(1)
+    // matches no tiene orgId propio (tabla hija) — se scopea por join a su
+    // conciliación padre. Sin este join, matchId (serial autoincremental) es
+    // adivinable/enumerable y cualquier org podría confirmar/rechazar matches ajenos.
+    const [match] = await db.select({ id: matchesTable.id })
+      .from(matchesTable)
+      .innerJoin(conciliaciones, eq(matchesTable.conciliacionId, conciliaciones.id))
+      .where(and(eq(matchesTable.id, matchId), eq(conciliaciones.orgId, orgId)))
+      .limit(1)
     if (!match) return NextResponse.json({ error: "Match no encontrado" }, { status: 404 })
 
     const nuevoTipo = action === "confirm" ? "confirmed" : "rejected"

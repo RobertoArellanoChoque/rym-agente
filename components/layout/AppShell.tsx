@@ -10,13 +10,13 @@ import { VentasProvider } from "@/lib/context/ventas-context"
 import { ContabilidadProvider } from "@/lib/context/contabilidad-context"
 import { AgentActivityProvider } from "@/lib/context/agent-activity-context"
 
-// Decide el chrome según la ruta. En /sign-in la app se renderiza a pantalla
-// completa, SIN sidebar/panel ni los providers de dominio (que si no dispararían
-// fetches 401 antes del login).
+// Decide el chrome según la ruta. En /sign-in y /seleccionar-org la app se
+// renderiza a pantalla completa, SIN sidebar/panel ni los providers de dominio
+// (que si no dispararían fetches 401/sin-org antes de tener sesión + org activa).
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
-  if (pathname?.startsWith("/sign-in")) {
+  if (pathname?.startsWith("/sign-in") || pathname?.startsWith("/seleccionar-org")) {
     return <>{children}</>
   }
 

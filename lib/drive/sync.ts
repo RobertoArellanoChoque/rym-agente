@@ -1,6 +1,7 @@
 import crypto from "crypto"
 import type { drive_v3 } from "googleapis"
 import { eq, and, isNotNull, isNull } from "drizzle-orm"
+import { clerkClient } from "@clerk/nextjs/server"
 import { db } from "@/lib/db"
 import {
   driveArchivos, driveSyncState, conciliaciones,
@@ -26,30 +27,73 @@ import type { Asiento } from "@/lib/types"
 const CREATED_BY = "drive-sync"
 const ERROR_FORMATO_NO_SOPORTADO = "Formato no soportado para tarjetas vía Drive, usar carga manual"
 
-// Busca conciliación existente (mismo banco + período) o arma un id nuevo. Mismo
+// orgId "del estudio" para todo lo que sincroniza Drive. syncDrive() corre disparada
+// por un webhook público (sin sesión Clerk), así que requireOrgId()/currentOrgId()
+// (lib/auth/current-user.ts, dependen de auth() = contexto de request) no sirven acá.
+// Prioridad: env var explícita (DRIVE_SYNC_ORG_ID) > única organización en Clerk.
+// Con 0 o >1 orgs no adivinamos — mejor que el sync falle explícito (se loguea como
+// error en driveArchivos vía el try/catch de processFile) a que atribuya datos a la
+// org equivocada. Cacheado en memoria del proceso: no pega la API de Clerk en cada
+// archivo/sync, y no hace falta TTL — se invalida solo con un restart del proceso.
+let cachedOrgId: string | null = null
+
+export async function resolverOrgIdEstudio(): Promise<string> {
+  if (cachedOrgId) return cachedOrgId
+
+  const envOrgId = process.env.DRIVE_SYNC_ORG_ID
+  if (envOrgId) {
+    cachedOrgId = envOrgId
+    return cachedOrgId
+  }
+
+  const client = await clerkClient()
+  const { data, totalCount } = await client.organizations.getOrganizationList({ limit: 2 })
+  if (totalCount !== 1) {
+    throw new Error(
+      `DRIVE_SYNC_ORG_AMBIGUOUS: se esperaba exactamente 1 organización en Clerk para atribuir el sync de Drive, hay ${totalCount}. Configurá DRIVE_SYNC_ORG_ID explícitamente.`
+    )
+  }
+
+  cachedOrgId = data[0].id
+  return cachedOrgId
+}
+
+// registry.ts ya acepta orgId en upsertConciliacion (lo setea al INSERT), pero
+// persistBanco/persistTango (lib/conciliacion/ingest-banco.ts, ingest-tango.ts —
+// fuera de mi scope) todavía llaman a su upsertConciliacion interno SIN orgId, así
+// que la fila que ellos crean queda con orgId null. Belt-and-suspenders: forzamos
+// acá el orgId correcto con un UPDATE directo apenas la fila existe. Cuando ese
+// track pase orgId a persistBanco/persistTango, este UPDATE pasa a ser un no-op
+// redundante (se puede borrar entonces) pero no rompe nada mientras tanto.
+async function setConciliacionOrgId(sessionId: string, orgId: string): Promise<void> {
+  await db.update(conciliaciones).set({ orgId }).where(eq(conciliaciones.id, sessionId))
+}
+
+// Busca conciliación existente (mismo banco + período + org) o arma un id nuevo. Mismo
 // criterio de agrupación que app/api/conciliacion/ingest-batch/route.ts, pero
 // consultando la DB en vez de agrupar en memoria (los archivos de Drive llegan
 // de a uno, no en batch).
-async function findOrCreateConciliacionBanco(bankId: string, periodo: string | undefined): Promise<string> {
+async function findOrCreateConciliacionBanco(bankId: string, periodo: string | undefined, orgId: string): Promise<string> {
   if (periodo) {
     const [existing] = await db.select({ id: conciliaciones.id }).from(conciliaciones)
-      .where(and(eq(conciliaciones.bancoId, bankId), eq(conciliaciones.periodo, periodo)))
+      .where(and(eq(conciliaciones.bancoId, bankId), eq(conciliaciones.periodo, periodo), eq(conciliaciones.orgId, orgId)))
       .limit(1)
     if (existing) return existing.id
   }
   return crypto.randomUUID()
 }
 
-// Busca la conciliación de banco ya creada en el mismo período; si no hay, arma sesión nueva (solo-tango).
+// Busca la conciliación de banco ya creada en el mismo período (misma org); si no hay, arma sesión nueva (solo-tango).
 // Mismo criterio de desambiguación que ingest-batch/route.ts: candidato único
 // banco+período sin tango todavía (asientosCount null) → usarlo. 0 o >1
 // candidatos → sesión nueva en vez de adivinar con "el más reciente" (evita
 // pisar la conciliación equivocada cuando hay varias del mismo banco/período).
-async function findConciliacionParaTango(periodo: string | undefined): Promise<{ id: string; isNew: boolean }> {
+async function findConciliacionParaTango(periodo: string | undefined, orgId: string): Promise<{ id: string; isNew: boolean }> {
   if (periodo) {
     const candidatos = await db.select({ id: conciliaciones.id }).from(conciliaciones)
       .where(and(
         eq(conciliaciones.periodo, periodo),
+        eq(conciliaciones.orgId, orgId),
         isNotNull(conciliaciones.bancoId),
         isNull(conciliaciones.asientosCount),
       ))
@@ -62,8 +106,8 @@ async function findConciliacionParaTango(periodo: string | undefined): Promise<{
 // bloque que app/api/conciliacion/ingest-batch/route.ts paso 3, pero relee de DB
 // en vez de usar los datos recién extraídos en memoria (el otro lado pudo haberse
 // persistido en un sync anterior).
-async function runMatchingIfComplete(sessionId: string): Promise<void> {
-  const conc = await getConciliacion(sessionId)
+async function runMatchingIfComplete(sessionId: string, orgId: string): Promise<void> {
+  const conc = await getConciliacion(sessionId, orgId)
   if (!conc || !conc.movimientosCount || !conc.asientosCount) return
 
   const [{ movimientos: movs }, asientoRows] = await Promise.all([
@@ -79,7 +123,7 @@ async function runMatchingIfComplete(sessionId: string): Promise<void> {
       stage: "done",
       movimientosCount: res.movimientos.length, asientosCount: res.asientos.length,
       saldoBanco: res.saldoBanco, saldoMayor: res.saldoMayor, diferencia: res.diferencia,
-    }, tx)
+    }, orgId, tx)
   })
 }
 
@@ -101,6 +145,10 @@ async function processFile(file: drive_v3.Schema$File): Promise<boolean> {
     })
 
   try {
+    // Primero: si no se puede resolver la org del estudio (ambigua o Clerk caído),
+    // cortamos acá — cae al catch de abajo y queda logueado como error en driveArchivos.
+    const orgId = await resolverOrgIdEstudio()
+
     const drive = getDriveClient()
     const { data } = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" })
     const buffer = data as ArrayBuffer
@@ -114,29 +162,31 @@ async function processFile(file: drive_v3.Schema$File): Promise<boolean> {
     switch (classification.type) {
       case "banco": {
         const ext = await extraerBanco(buffer, nombre)
-        const sessionId = await findOrCreateConciliacionBanco(ext.bankResult.bankId, ext.periodo)
+        const sessionId = await findOrCreateConciliacionBanco(ext.bankResult.bankId, ext.periodo, orgId)
         await persistBanco(sessionId, ext)
-        await runMatchingIfComplete(sessionId)
+        await setConciliacionOrgId(sessionId, orgId)
+        await runMatchingIfComplete(sessionId, orgId)
         break
       }
       case "tango": {
         const mayor = await extraerTango(buffer, nombre)
-        const { id: sessionId, isNew } = await findConciliacionParaTango(mayor.periodo)
+        const { id: sessionId, isNew } = await findConciliacionParaTango(mayor.periodo, orgId)
         await persistTango(sessionId, mayor)
-        if (isNew) await upsertConciliacion(sessionId, { label: `Mayor Tango — ${nombreMes(mayor.periodo)}` })
-        await runMatchingIfComplete(sessionId)
+        await setConciliacionOrgId(sessionId, orgId)
+        if (isNew) await upsertConciliacion(sessionId, { label: `Mayor Tango — ${nombreMes(mayor.periodo)}` }, orgId)
+        await runMatchingIfComplete(sessionId, orgId)
         break
       }
       case "tarjeta": {
         if (extFile !== "pdf") throw new Error(ERROR_FORMATO_NO_SOPORTADO)
         const { result } = await procesarExtractoTarjeta(buffer)
-        await persistTarjeta(result, CREATED_BY)
+        await persistTarjeta(result, CREATED_BY, orgId)
         break
       }
       case "pago_retencion": {
         if (extFile !== "pdf") throw new Error(ERROR_FORMATO_NO_SOPORTADO)
         const { result } = await procesarComprobantePago(buffer)
-        await persistPago(result, CREATED_BY)
+        await persistPago(result, CREATED_BY, orgId)
         break
       }
       default:

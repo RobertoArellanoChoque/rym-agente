@@ -4,7 +4,8 @@ import { getConciliacion } from "@/lib/conciliacion/registry"
 import { getPartidas } from "@/lib/partidas/manager"
 import { db } from "@/lib/db"
 import { conciliaciones } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { requireOrgId } from "@/lib/auth/current-user"
+import { and, eq } from "drizzle-orm"
 import { agruparPorCategoria } from "@/lib/conciliacion/agrupar-categorias"
 import { explicarGap } from "@/lib/conciliacion/explicar-gap"
 import { calcularFinanzas } from "@/lib/conciliacion/matching"
@@ -18,10 +19,17 @@ export async function GET(req: NextRequest) {
   const sessionId = req.nextUrl.searchParams.get("sessionId")
   if (!sessionId) return NextResponse.json({ error: "sessionId requerido" }, { status: 400 })
 
+  let orgId: string
+  try {
+    orgId = await requireOrgId()
+  } catch {
+    return NextResponse.json({ error: "Organización requerida" }, { status: 403 })
+  }
+
   const [entry, data, { movimientos: movRows, sumaDiferidos }] = await Promise.all([
-    getConciliacion(sessionId),
+    getConciliacion(sessionId, orgId),
     db.query.conciliaciones.findFirst({
-      where: eq(conciliaciones.id, sessionId),
+      where: and(eq(conciliaciones.id, sessionId), eq(conciliaciones.orgId, orgId)),
       with: {
         asientos: true,
         matches: { with: { movimiento: true, asiento: true } },
@@ -48,7 +56,7 @@ export async function GET(req: NextRequest) {
     revisar: r.revisar ?? false,
   }))
 
-  const partidas = entry.bankId ? await getPartidas(entry.bankId) : []
+  const partidas = entry.bankId ? await getPartidas(entry.bankId, orgId) : []
   const sumaPartidas = partidas.reduce((s, p) => s + p.monto, 0) + sumaDiferidos
   // Netos del período desde las filas (no del header) — ver matching.ts
   const { saldoBanco, saldoMayor } = calcularFinanzas(movRows, asiRows, discrepancias, sumaPartidas)

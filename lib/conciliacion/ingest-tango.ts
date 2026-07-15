@@ -2,8 +2,9 @@ import { parseTangoExcel, parseTangoCsv } from "@/lib/tango/parser"
 import { upsertConciliacion } from "@/lib/conciliacion/registry"
 import { periodoDeFechas } from "@/lib/conciliacion/periodo"
 import { db } from "@/lib/db"
-import { asientos as asientosTable } from "@/lib/db/schema"
+import { asientos as asientosTable, conciliaciones } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
+import { requireOrgId } from "@/lib/auth/current-user"
 import type { Asiento } from "@/lib/types"
 
 export class IngestTangoError extends Error {
@@ -40,6 +41,14 @@ export async function extraerTango(buffer: ArrayBuffer, filename: string): Promi
 
 /** Persiste un mayor extraído en una sesión existente. */
 export async function persistTango(sessionId: string, mayor: MayorTango): Promise<void> {
+  const orgId = await requireOrgId()
+  // Defensivo: mismo chequeo que persistBanco — no pisar una sesión de otra org.
+  const [existing] = await db.select({ orgId: conciliaciones.orgId }).from(conciliaciones)
+    .where(eq(conciliaciones.id, sessionId)).limit(1)
+  if (existing?.orgId && existing.orgId !== orgId) {
+    throw new Error("La sesión pertenece a otra organización")
+  }
+
   await db.transaction(async (tx) => {
     await tx.delete(asientosTable).where(eq(asientosTable.conciliacionId, sessionId))
     if (mayor.asientos.length > 0) {
@@ -56,5 +65,5 @@ export async function persistTango(sessionId: string, mayor: MayorTango): Promis
     asientosCount: mayor.asientos.length,
     saldoMayor: mayor.saldoMayor,
     ...(mayor.periodo && { periodo: mayor.periodo }),
-  })
+  }, orgId)
 }

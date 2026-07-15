@@ -10,7 +10,7 @@ import { rowToAsiento } from "@/lib/conciliacion/mappers"
 import { cargarMovimientosActivos } from "@/lib/conciliacion/movimientos-activos"
 import { centavosAString, TOLERANCIA_CUADRE } from "@/lib/conciliacion/matching"
 import { evaluarContabilizar } from "@/lib/conciliacion/contabilizar"
-import { currentUserId } from "@/lib/auth/current-user"
+import { currentUserId, requireOrgId } from "@/lib/auth/current-user"
 import crypto from "crypto"
 import type { Asiento } from "@/lib/types"
 
@@ -23,8 +23,9 @@ export const actionTools = {
       aprobarMatches: z.boolean().optional().describe("Si true, aprueba automáticamente todos los matches sin intervención del usuario. Default: false (solo calcula, no aprueba)."),
     }),
     execute: async ({ sessionId, aprobarMatches = false }) => {
+      const orgId = await requireOrgId()
       // Verificar sesión existe
-      const session = await getConciliacion(sessionId)
+      const session = await getConciliacion(sessionId, orgId)
       if (!session) return { error: "Sesión no encontrada" }
 
       // Stage debe ser tango-done (banco + mayor cargados)
@@ -60,7 +61,7 @@ export const actionTools = {
         saldoBanco: resultado.saldoBanco,
         saldoMayor: resultado.saldoMayor,
         diferencia: resultado.diferencia,
-      })
+      }, orgId)
 
       return {
         ok: true,
@@ -81,7 +82,8 @@ export const actionTools = {
     // No muta estado financiero: solo valida y propone. La aprobación real
     // ocurre por click humano en TasksPanel → /api/tasks. Ver /cso F1.
     execute: async ({ sessionId }) => {
-      const session = await getConciliacion(sessionId)
+      const orgId = await requireOrgId()
+      const session = await getConciliacion(sessionId, orgId)
       if (!session) return { error: "Sesión no encontrada" }
       if (session.stage !== "done") {
         return { error: `Stage actual: ${session.stage}. Ejecutá el matching primero (ejecutar_matching).` }
@@ -111,6 +113,7 @@ export const actionTools = {
       const sessionId = crypto.randomUUID()
       const now = new Date().toISOString()
       const userId = await currentUserId()
+      const orgId = await requireOrgId()
 
       await db.insert(conciliaciones).values({
         id: sessionId,
@@ -120,6 +123,7 @@ export const actionTools = {
         updatedAt: now,
         createdBy: userId,
         updatedBy: userId,
+        orgId,
       })
 
       return {
@@ -152,7 +156,8 @@ export const actionTools = {
       sessionId: z.string().describe("ID UUID de la sesión de conciliación"),
     }),
     execute: async ({ sessionId }) => {
-      const session = await getConciliacion(sessionId)
+      const orgId = await requireOrgId()
+      const session = await getConciliacion(sessionId, orgId)
       if (!session) return { error: "Sesión no encontrada" }
 
       const rows = await db.select().from(discrepancias).where(eq(discrepancias.conciliacionId, sessionId))

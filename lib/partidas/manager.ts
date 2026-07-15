@@ -1,6 +1,6 @@
 import { db } from "@/lib/db"
 import { partidas as partidasTable } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { currentUserId } from "@/lib/auth/current-user"
 
 export type Partida = {
@@ -10,8 +10,9 @@ export type Partida = {
   fecha: string
 }
 
-export async function getPartidas(bankId: string): Promise<Partida[]> {
-  const rows = await db.select().from(partidasTable).where(eq(partidasTable.bancoId, bankId))
+export async function getPartidas(bankId: string, orgId: string): Promise<Partida[]> {
+  const rows = await db.select().from(partidasTable)
+    .where(and(eq(partidasTable.bancoId, bankId), eq(partidasTable.orgId, orgId)))
   return rows.map(r => ({
     id: r.id,
     descripcion: r.descripcion,
@@ -20,10 +21,10 @@ export async function getPartidas(bankId: string): Promise<Partida[]> {
   }))
 }
 
-export async function setPartidas(bankId: string, items: Partida[]): Promise<void> {
+export async function setPartidas(bankId: string, orgId: string, items: Partida[]): Promise<void> {
   const userId = await currentUserId()
   await db.transaction(async (tx) => {
-    await tx.delete(partidasTable).where(eq(partidasTable.bancoId, bankId))
+    await tx.delete(partidasTable).where(and(eq(partidasTable.bancoId, bankId), eq(partidasTable.orgId, orgId)))
     if (items.length > 0) {
       await tx.insert(partidasTable).values(items.map(p => ({
         id: p.id,
@@ -32,6 +33,7 @@ export async function setPartidas(bankId: string, items: Partida[]): Promise<voi
         monto: p.monto,
         fecha: p.fecha,
         createdBy: userId,
+        orgId,
       })))
     }
   })

@@ -3,9 +3,9 @@ import { db } from "@/lib/db"
 import { resumenTarjetas } from "@/lib/db/schema"
 import { procesarExtractoTarjeta } from "@/lib/tarjetas/extractor"
 import { persistTarjeta } from "@/lib/tarjetas/persist"
-import { desc, eq } from "drizzle-orm"
+import { and, desc, eq } from "drizzle-orm"
 import { MAX_UPLOAD_BYTES } from "@/lib/utils"
-import { currentUserId } from "@/lib/auth/current-user"
+import { currentUserId, requireOrgId } from "@/lib/auth/current-user"
 import { rateLimit, ipOf } from "@/lib/rate-limit"
 
 interface RawLinea {
@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
   if (!(await rateLimit(`upload:${ipOf(req)}`, 10, 60_000)))
     return NextResponse.json({ error: "Demasiadas solicitudes, esperá un momento" }, { status: 429 })
   try {
+    const orgId = await requireOrgId()
     const contentType = req.headers.get("content-type") ?? ""
 
     // Path A: pre-extracted JSON from preview (no re-run OCR)
@@ -47,12 +48,12 @@ export async function POST(req: NextRequest) {
           periodo: l.periodo,
           tipoLinea: l.tipoLinea === "cargo" ? "impuesto" : l.tipoLinea,
         })),
-      }, await currentUserId())
+      }, await currentUserId(), orgId)
 
       if (body.tarjetaMaestraId) {
         await db.update(resumenTarjetas)
           .set({ tarjetaMaestraId: body.tarjetaMaestraId })
-          .where(eq(resumenTarjetas.id, resumenId))
+          .where(and(eq(resumenTarjetas.id, resumenId), eq(resumenTarjetas.orgId, orgId)))
       }
 
       return NextResponse.json({ id: resumenId, nombreTarjeta: body.nombreTarjeta, periodo: body.periodo, totalMonto })
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { result } = extraction
-    const { resumenId, totalMonto } = await persistTarjeta(result, await currentUserId())
+    const { resumenId, totalMonto } = await persistTarjeta(result, await currentUserId(), orgId)
 
     return NextResponse.json({
       id: resumenId,
@@ -96,6 +97,9 @@ export async function POST(req: NextRequest) {
       totalMonto,
     })
   } catch (e: unknown) {
+    if (e instanceof Error && e.message === "NO_ACTIVE_ORG") {
+      return NextResponse.json({ error: "No hay organización activa" }, { status: 403 })
+    }
     console.error("[POST /api/proveedores/tarjeta]", e)
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
   }
@@ -103,9 +107,15 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   try {
-    const rows = await db.select().from(resumenTarjetas).orderBy(desc(resumenTarjetas.creadoEn))
+    const orgId = await requireOrgId()
+    const rows = await db.select().from(resumenTarjetas)
+      .where(eq(resumenTarjetas.orgId, orgId))
+      .orderBy(desc(resumenTarjetas.creadoEn))
     return NextResponse.json(rows)
   } catch (e: unknown) {
+    if (e instanceof Error && e.message === "NO_ACTIVE_ORG") {
+      return NextResponse.json({ error: "No hay organización activa" }, { status: 403 })
+    }
     console.error("[GET /api/proveedores/tarjeta]", e)
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
   }

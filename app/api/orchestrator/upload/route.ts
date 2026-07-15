@@ -9,7 +9,7 @@ import { persistPago } from "@/lib/ventas/persist"
 import { createSession } from "@/lib/sessions/manager"
 import { MAX_UPLOAD_BYTES } from "@/lib/utils"
 import { centavosAString } from "@/lib/conciliacion/matching"
-import { currentUserId } from "@/lib/auth/current-user"
+import { currentUserId, requireOrgId } from "@/lib/auth/current-user"
 import { rateLimit, ipOf } from "@/lib/rate-limit"
 
 interface OrchestratorResult {
@@ -40,9 +40,9 @@ function buildTangoSummary(sessionId?: string): OrchestratorResult {
   }
 }
 
-async function handleTarjeta(buffer: ArrayBuffer): Promise<OrchestratorResult> {
+async function handleTarjeta(buffer: ArrayBuffer, orgId: string): Promise<OrchestratorResult> {
   const { result } = await procesarExtractoTarjeta(buffer)
-  const { resumenId, totalMonto } = await persistTarjeta(result, await currentUserId())
+  const { resumenId, totalMonto } = await persistTarjeta(result, await currentUserId(), orgId)
 
   return {
     classification: { type: "tarjeta", confidence: "high", suggestedModule: "proveedores", metadata: {} },
@@ -52,13 +52,13 @@ async function handleTarjeta(buffer: ArrayBuffer): Promise<OrchestratorResult> {
   }
 }
 
-async function handlePago(buffer: ArrayBuffer): Promise<OrchestratorResult> {
+async function handlePago(buffer: ArrayBuffer, orgId: string): Promise<OrchestratorResult> {
   const { result } = await procesarComprobantePago(buffer)
   const pago = result as PagoResult
   const totalRetenciones = pago.retenciones.reduce((s, r) => s + r.monto, 0)
   const tiposRet = pago.retenciones.map((r) => r.tipo).join(", ")
 
-  const retencionId = await persistPago(pago, await currentUserId())
+  const retencionId = await persistPago(pago, await currentUserId(), orgId)
 
   return {
     classification: { type: "pago_retencion", confidence: "high", suggestedModule: "ventas", metadata: {} },
@@ -70,6 +70,14 @@ async function handlePago(buffer: ArrayBuffer): Promise<OrchestratorResult> {
 export async function POST(req: NextRequest) {
   if (!(await rateLimit(`upload:${ipOf(req)}`, 10, 60_000)))
     return NextResponse.json({ error: "Demasiadas solicitudes, esperá un momento" }, { status: 429 })
+
+  let orgId: string
+  try {
+    orgId = await requireOrgId()
+  } catch {
+    return NextResponse.json({ error: "No hay organización activa" }, { status: 403 })
+  }
+
   try {
     const form = await req.formData()
     const file = form.get("file") as File | null
@@ -131,7 +139,7 @@ export async function POST(req: NextRequest) {
 
       case "tarjeta": {
         if (isPdf) {
-          result = await handleTarjeta(buffer)
+          result = await handleTarjeta(buffer, orgId)
         } else {
           result = {
             classification,
@@ -144,7 +152,7 @@ export async function POST(req: NextRequest) {
 
       case "pago_retencion": {
         if (isPdf) {
-          result = await handlePago(buffer)
+          result = await handlePago(buffer, orgId)
         } else {
           result = {
             classification,

@@ -4,8 +4,8 @@ import { db } from "@/lib/db"
 import { retencionesArca } from "@/lib/db/schema"
 import { parseArcaXlsx } from "@/lib/contabilidad/parsers/arca"
 import { MAX_UPLOAD_BYTES } from "@/lib/utils"
-import { desc } from "drizzle-orm"
-import { currentUserId } from "@/lib/auth/current-user"
+import { desc, eq } from "drizzle-orm"
+import { currentUserId, requireOrgId } from "@/lib/auth/current-user"
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
     const loteId = crypto.randomUUID()
     const now = new Date().toISOString()
     const userId = await currentUserId()
+    const orgId = await requireOrgId()
 
     await db.insert(retencionesArca).values(filas.map(f => ({
       id: crypto.randomUUID(),
@@ -41,6 +42,7 @@ export async function POST(req: NextRequest) {
       importe: f.importe,
       creadoEn: now,
       createdBy: userId,
+      orgId,
     })))
 
     return NextResponse.json({ loteId, count: filas.length, jurisdiccion, filas })
@@ -51,6 +53,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  const rows = await db.select().from(retencionesArca).orderBy(desc(retencionesArca.creadoEn))
+  const orgId = await requireOrgId()
+  const rows = await db.select().from(retencionesArca)
+    .where(eq(retencionesArca.orgId, orgId))
+    .orderBy(desc(retencionesArca.creadoEn))
   return NextResponse.json(rows)
 }

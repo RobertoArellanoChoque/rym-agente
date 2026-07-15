@@ -1,6 +1,6 @@
 import { db } from "@/lib/db"
 import { conciliaciones } from "@/lib/db/schema"
-import { eq, desc } from "drizzle-orm"
+import { eq, desc, and } from "drizzle-orm"
 import type { ConcStage } from "@/lib/types"
 import type { Tx } from "@/lib/conciliacion/persist"
 import { currentUserId } from "@/lib/auth/current-user"
@@ -45,19 +45,24 @@ function rowToEntry(row: typeof conciliaciones.$inferSelect): ConciliacionEntry 
   }
 }
 
-export async function listConciliaciones(): Promise<ConciliacionEntry[]> {
-  const rows = await db.select().from(conciliaciones).orderBy(desc(conciliaciones.createdAt))
+export async function listConciliaciones(orgId: string): Promise<ConciliacionEntry[]> {
+  const rows = await db.select().from(conciliaciones)
+    .where(eq(conciliaciones.orgId, orgId))
+    .orderBy(desc(conciliaciones.createdAt))
   return rows.map(rowToEntry)
 }
 
-export async function getConciliacion(id: string): Promise<ConciliacionEntry | null> {
-  const [row] = await db.select().from(conciliaciones).where(eq(conciliaciones.id, id)).limit(1)
+export async function getConciliacion(id: string, orgId: string): Promise<ConciliacionEntry | null> {
+  const [row] = await db.select().from(conciliaciones)
+    .where(and(eq(conciliaciones.id, id), eq(conciliaciones.orgId, orgId)))
+    .limit(1)
   return row ? rowToEntry(row) : null
 }
 
 export async function upsertConciliacion(
   id: string,
   patch: Partial<Omit<ConciliacionEntry, "id" | "updatedAt">>,
+  orgId: string,
   exec: Tx | typeof db = db
 ): Promise<void> {
   const now = new Date().toISOString()
@@ -84,15 +89,22 @@ export async function upsertConciliacion(
   await exec.insert(conciliaciones)
     .values({
       id,
+      orgId,
       label: patch.label ?? `Conciliación ${new Date().toLocaleDateString("es-AR")}`,
       stage: patch.stage ?? "new",
       createdAt: now,
       createdBy: userId,
       ...values,
     })
-    .onConflictDoUpdate({ target: conciliaciones.id, set: values })
+    .onConflictDoUpdate({
+      target: conciliaciones.id,
+      set: values,
+      // Si la fila ya existe pero pertenece a otra org, el UPDATE es un no-op
+      // (evita que un id ajeno "resucite"/hijackee cross-tenant vía conflicto de PK).
+      setWhere: eq(conciliaciones.orgId, orgId),
+    })
 }
 
-export async function removeConciliacion(id: string): Promise<void> {
-  await db.delete(conciliaciones).where(eq(conciliaciones.id, id))
+export async function removeConciliacion(id: string, orgId: string): Promise<void> {
+  await db.delete(conciliaciones).where(and(eq(conciliaciones.id, id), eq(conciliaciones.orgId, orgId)))
 }

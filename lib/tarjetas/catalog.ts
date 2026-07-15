@@ -1,6 +1,7 @@
 import crypto from "crypto"
 import { db } from "@/lib/db"
 import { tarjetasMaestras } from "@/lib/db/schema"
+import { resolverOrgIdEstudio } from "@/lib/drive/sync"
 
 export const TARJETAS_MAESTRAS = [
   { nombre: "TARJETA VISA FRANCES RYM", banco: "FRANCES", tipo: "VISA" },
@@ -25,6 +26,7 @@ export const TARJETAS_MAESTRAS = [
 ] as const
 
 export async function seedTarjetasMaestras(): Promise<void> {
+  const orgId = await resolverOrgIdEstudio()
   await db.insert(tarjetasMaestras)
     .values(TARJETAS_MAESTRAS.map(t => ({
       id: crypto.randomUUID(),
@@ -32,6 +34,7 @@ export async function seedTarjetasMaestras(): Promise<void> {
       banco: t.banco,
       tipo: t.tipo,
       activa: true,
+      orgId,
     })))
-    .onConflictDoNothing({ target: tarjetasMaestras.nombre })
+    .onConflictDoNothing({ target: [tarjetasMaestras.orgId, tarjetasMaestras.nombre] })
 }

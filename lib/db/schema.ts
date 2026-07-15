@@ -1,4 +1,4 @@
-import { pgTable, text, integer, bigint, serial, jsonb, index, boolean, date, timestamp, check } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, bigint, serial, jsonb, index, boolean, date, timestamp, check, unique } from "drizzle-orm/pg-core"
 import { sql, relations } from "drizzle-orm"
 import type { Categoria, ConcStage, MatchTipo, TipoDiscrepancia } from "../types"
 
@@ -30,10 +30,12 @@ export const conciliaciones = pgTable("conciliaciones", {
   updatedAt: ts("updated_at").notNull(),
   createdBy: text("created_by"), // Clerk userId de quien la creó (nullable — filas viejas / writes fuera de request)
   updatedBy: text("updated_by"), // Clerk userId del último editor
+  orgId: text("org_id"), // Clerk organization id (nullable hasta backfill; NOT NULL en migración de seguimiento)
 }, (t) => [
   index("conciliaciones_created_at_idx").on(t.createdAt),
   index("conciliaciones_updated_at_idx").on(t.updatedAt),
   index("conciliaciones_stage_idx").on(t.stage),
+  index("conciliaciones_org_id_created_at_idx").on(t.orgId, t.createdAt),
   check("conciliaciones_stage_chk", inList("stage", ["new", "banco-done", "tango-done", "done", "aprobada"])),
   check("conciliaciones_banco_confidence_chk", sql`banco_confidence is null or ${inList("banco_confidence", ["high", "low"])}`),
 ])
@@ -121,13 +123,15 @@ export const movimientosDiferidos = pgTable("movimientos_diferidos", {
   conciliadoEnMovimientoId: text("conciliado_en_movimiento_id").references(() => movimientos.id, { onDelete: "set null" }),
   createdBy: text("created_by"), // Clerk userId de quien lo difirió, o "drive-sync"
   createdAt: ts("created_at").notNull().defaultNow(),
+  orgId: text("org_id"), // Clerk organization id (nullable hasta backfill; NOT NULL en migración de seguimiento)
 }, (t) => [
   index("movimientos_diferidos_banco_periodo_estado_idx").on(t.bancoId, t.periodoDestino, t.estado),
+  index("movimientos_diferidos_org_id_banco_periodo_estado_idx").on(t.orgId, t.bancoId, t.periodoDestino, t.estado),
   check("movimientos_diferidos_estado_chk", inList("estado", ["pendiente", "conciliado", "descartado"])),
 ])
 
 export const saldosBanco = pgTable("saldos_banco", {
-  bancoId: text("banco_id").primaryKey(),
+  bancoId: text("banco_id").notNull(),
   bancoNombre: text("banco_nombre").notNull(),
   ultimoSaldo: centavos("ultimo_saldo").notNull(),
   ultimaFecha: fecha("ultima_fecha").notNull(),
@@ -136,7 +140,10 @@ export const saldosBanco = pgTable("saldos_banco", {
   saldoConciliado: centavos("saldo_conciliado"),
   fechaConciliacion: ts("fecha_conciliacion"),
   updatedByUser: text("updated_by_user"), // Clerk userId (updatedBy de arriba es flag auto|manual, no usuario)
-}, () => [
+  orgId: text("org_id"), // Clerk organization id (nullable hasta backfill; NOT NULL en migración de seguimiento)
+}, (t) => [
+  // bancoId ya no es PK global (colisionaba entre orgs) — unique compuesto (org_id, banco_id).
+  unique("saldos_banco_org_id_banco_id_unique").on(t.orgId, t.bancoId),
   check("saldos_banco_updated_by_chk", inList("updated_by", ["auto", "manual"])),
 ])
 
@@ -147,19 +154,23 @@ export const partidas = pgTable("partidas", {
   monto: centavos("monto").notNull(),
   fecha: fecha("fecha").notNull(),
   createdBy: text("created_by"), // Clerk userId de quien la cargó
+  orgId: text("org_id"), // Clerk organization id (nullable hasta backfill; NOT NULL en migración de seguimiento)
 }, (t) => [
   index("partidas_banco_id_idx").on(t.bancoId),
+  index("partidas_org_id_banco_id_idx").on(t.orgId, t.bancoId),
 ])
 
 export const tarjetasMaestras = pgTable("tarjetas_maestras", {
   id: text("id").primaryKey(),
-  nombre: text("nombre").notNull().unique(),
+  nombre: text("nombre").notNull(),
   banco: text("banco").notNull(),
   tipo: text("tipo").$type<"VISA" | "MASTERCARD" | "AMEX">().notNull(), // VISA | MASTERCARD | AMEX
   activa: boolean("activa").notNull().default(true),
   createdBy: text("created_by"), // Clerk userId de quien la creó
   updatedBy: text("updated_by"), // Clerk userId del último editor
-}, () => [
+  orgId: text("org_id"), // Clerk organization id (nullable hasta backfill; NOT NULL en migración de seguimiento)
+}, (t) => [
+  unique("tarjetas_maestras_org_id_nombre_unique").on(t.orgId, t.nombre), // antes: unique simple en nombre — dos orgs pueden repetir nombre
   check("tarjetas_maestras_tipo_chk", inList("tipo", ["VISA", "MASTERCARD", "AMEX"])),
 ])
 
@@ -171,9 +182,11 @@ export const resumenTarjetas = pgTable("resumen_tarjetas", {
   tarjetaMaestraId: text("tarjeta_maestra_id").references(() => tarjetasMaestras.id, { onDelete: "set null" }),
   creadoEn: ts("creado_en").notNull(),
   createdBy: text("created_by"), // Clerk userId de quien lo procesó
+  orgId: text("org_id"), // Clerk organization id (nullable hasta backfill; NOT NULL en migración de seguimiento)
 }, (t) => [
   index("resumen_tarjetas_creado_en_idx").on(t.creadoEn),
   index("resumen_tarjetas_tarjeta_maestra_id_idx").on(t.tarjetaMaestraId),
+  index("resumen_tarjetas_org_id_creado_en_idx").on(t.orgId, t.creadoEn),
 ])
 
 export const lineasTarjeta = pgTable("lineas_tarjeta", {
@@ -203,8 +216,10 @@ export const retencionesArca = pgTable("retenciones_arca", {
   importe: centavos("importe").notNull(), // centavos
   creadoEn: ts("creado_en").notNull(),
   createdBy: text("created_by"), // Clerk userId de quien lo cargó
+  orgId: text("org_id"), // Clerk organization id (nullable hasta backfill; NOT NULL en migración de seguimiento)
 }, (t) => [
   index("retenciones_arca_creado_en_idx").on(t.creadoEn),
+  index("retenciones_arca_org_id_creado_en_idx").on(t.orgId, t.creadoEn),
   check("retenciones_arca_jurisdiccion_chk", inList("jurisdiccion", ["nacional", "caba", "otra"])),
 ])
 
@@ -221,8 +236,10 @@ export const retencionesTango = pgTable("retenciones_tango", {
   saldo: centavos("saldo").notNull(), // centavos
   creadoEn: ts("creado_en").notNull(),
   createdBy: text("created_by"), // Clerk userId de quien lo cargó
+  orgId: text("org_id"), // Clerk organization id (nullable hasta backfill; NOT NULL en migración de seguimiento)
 }, (t) => [
   index("retenciones_tango_creado_en_idx").on(t.creadoEn),
+  index("retenciones_tango_org_id_creado_en_idx").on(t.orgId, t.creadoEn),
 ])
 
 export const sesiones = pgTable("sesiones", {
@@ -235,8 +252,10 @@ export const sesiones = pgTable("sesiones", {
   updatedAt: ts("updated_at").notNull(),
   createdBy: text("created_by"), // Clerk userId de quien la creó
   updatedBy: text("updated_by"), // Clerk userId del último editor
+  orgId: text("org_id"), // Clerk organization id (nullable hasta backfill; NOT NULL en migración de seguimiento)
 }, (t) => [
   index("sesiones_modulo_updated_at_idx").on(t.modulo, t.updatedAt),
+  index("sesiones_org_id_modulo_updated_at_idx").on(t.orgId, t.modulo, t.updatedAt),
   check("sesiones_modulo_chk", inList("modulo", ["ventas", "contabilidad"])),
   check("sesiones_estado_chk", inList("estado", ["activo", "completado", "error"])),
 ])
@@ -250,8 +269,10 @@ export const usoApi = pgTable("uso_api", {
   tokensIn: integer("tokens_in").notNull(),
   tokensOut: integer("tokens_out").notNull(),
   costoUsd: bigint("costo_usd", { mode: "number" }).notNull(), // micro-USD (costoUsd / 1_000_000 = USD)
+  orgId: text("org_id"), // Clerk organization id (nullable hasta backfill; NOT NULL en migración de seguimiento)
 }, (t) => [
   index("uso_api_ts_idx").on(t.ts),
+  index("uso_api_org_id_ts_idx").on(t.orgId, t.ts),
   check("uso_api_provider_chk", inList("provider", ["anthropic", "mistral", "openai"])),
 ])
 
@@ -266,8 +287,10 @@ export const retenciones = pgTable("retenciones", {
   montoNeto: centavos("monto_neto").notNull(),
   creadoEn: ts("creado_en").notNull(),
   createdBy: text("created_by"), // Clerk userId de quien la cargó
+  orgId: text("org_id"), // Clerk organization id (nullable hasta backfill; NOT NULL en migración de seguimiento)
 }, (t) => [
   index("retenciones_creado_en_idx").on(t.creadoEn),
+  index("retenciones_org_id_creado_en_idx").on(t.orgId, t.creadoEn),
 ])
 
 // Detalle de retenciones (antes retenciones.retencionesJson jsonb)

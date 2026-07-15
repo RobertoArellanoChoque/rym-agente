@@ -2,15 +2,16 @@ import { NextRequest, NextResponse } from "next/server"
 import crypto from "crypto"
 import { db } from "@/lib/db"
 import { sesiones } from "@/lib/db/schema"
-import { eq, desc } from "drizzle-orm"
-import { currentUserId } from "@/lib/auth/current-user"
+import { and, eq, desc } from "drizzle-orm"
+import { currentUserId, requireOrgId } from "@/lib/auth/current-user"
 
 export async function GET(req: NextRequest) {
   const modulo = req.nextUrl.searchParams.get("modulo")
   try {
+    const orgId = await requireOrgId()
     const rows = modulo
-      ? await db.select().from(sesiones).where(eq(sesiones.modulo, modulo as "ventas" | "contabilidad")).orderBy(desc(sesiones.updatedAt))
-      : await db.select().from(sesiones).orderBy(desc(sesiones.updatedAt))
+      ? await db.select().from(sesiones).where(and(eq(sesiones.orgId, orgId), eq(sesiones.modulo, modulo as "ventas" | "contabilidad"))).orderBy(desc(sesiones.updatedAt))
+      : await db.select().from(sesiones).where(eq(sesiones.orgId, orgId)).orderBy(desc(sesiones.updatedAt))
     return NextResponse.json(rows)
   } catch (e) {
     console.error("[GET /api/sesiones]", e)
@@ -27,7 +28,8 @@ export async function POST(req: NextRequest) {
     const id = crypto.randomUUID()
     const defaultLabel = label ?? `${modulo === "ventas" ? "Comprobante" : "Comparación"} ${now.slice(0, 10)}`
     const userId = await currentUserId()
-    await db.insert(sesiones).values({ id, modulo, label: defaultLabel, estado: "activo", datos: {}, createdAt: now, updatedAt: now, createdBy: userId, updatedBy: userId })
+    const orgId = await requireOrgId()
+    await db.insert(sesiones).values({ id, modulo, label: defaultLabel, estado: "activo", datos: {}, createdAt: now, updatedAt: now, createdBy: userId, updatedBy: userId, orgId })
     return NextResponse.json({ id, label: defaultLabel })
   } catch (e) {
     console.error("[POST /api/sesiones]", e)

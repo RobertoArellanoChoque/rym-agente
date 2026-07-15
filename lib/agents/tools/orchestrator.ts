@@ -2,9 +2,10 @@ import { tool } from "ai"
 import { z } from "zod"
 import { db } from "@/lib/db"
 import { resumenTarjetas, retenciones } from "@/lib/db/schema"
-import { eq, desc } from "drizzle-orm"
+import { and, eq, desc } from "drizzle-orm"
 import { listConciliaciones } from "@/lib/conciliacion/registry"
 import { centavosAString } from "@/lib/conciliacion/matching"
+import { requireOrgId } from "@/lib/auth/current-user"
 
 export const orchestratorTools = {
   ver_estado_general: tool({
@@ -12,10 +13,11 @@ export const orchestratorTools = {
       "Muestra un resumen del estado global del sistema: sesiones de conciliación activas, resúmenes de tarjeta procesados y saldos bancarios registrados. Usalo cuando el usuario pregunte qué hay cargado o qué procesó el sistema.",
     inputSchema: z.object({}),
     execute: async () => {
+      const orgId = await requireOrgId()
       const [conciliacionesAll, tarjetas, ultimasRetenciones] = await Promise.all([
-        listConciliaciones(),
-        db.select().from(resumenTarjetas).orderBy(desc(resumenTarjetas.creadoEn)).limit(5),
-        db.select().from(retenciones).orderBy(desc(retenciones.creadoEn)).limit(3),
+        listConciliaciones(orgId),
+        db.select().from(resumenTarjetas).where(eq(resumenTarjetas.orgId, orgId)).orderBy(desc(resumenTarjetas.creadoEn)).limit(5),
+        db.select().from(retenciones).where(eq(retenciones.orgId, orgId)).orderBy(desc(retenciones.creadoEn)).limit(3),
       ])
       const conciliaciones = conciliacionesAll.slice(0, 5)
       return {
@@ -49,8 +51,9 @@ export const orchestratorTools = {
       resumenId: z.string().describe("ID UUID del resumen de tarjeta"),
     }),
     execute: async ({ resumenId }) => {
+      const orgId = await requireOrgId()
       const resumen = await db.query.resumenTarjetas.findFirst({
-        where: eq(resumenTarjetas.id, resumenId),
+        where: and(eq(resumenTarjetas.id, resumenId), eq(resumenTarjetas.orgId, orgId)),
         with: { lineas: true },
       })
       if (!resumen) return { error: "Resumen no encontrado" }
@@ -67,7 +70,8 @@ export const orchestratorTools = {
       "Lista todos los resúmenes de tarjeta de crédito procesados con sus totales y períodos.",
     inputSchema: z.object({}),
     execute: async () => {
-      const rows = await db.select().from(resumenTarjetas).orderBy(desc(resumenTarjetas.creadoEn)).limit(20)
+      const orgId = await requireOrgId()
+      const rows = await db.select().from(resumenTarjetas).where(eq(resumenTarjetas.orgId, orgId)).orderBy(desc(resumenTarjetas.creadoEn)).limit(20)
       return rows.map((r) => ({
         id: r.id,
         tarjeta: r.nombreTarjeta,
@@ -85,8 +89,9 @@ export const orchestratorTools = {
       resumenId: z.string().describe("ID UUID del resumen de tarjeta"),
     }),
     execute: async ({ resumenId }) => {
+      const orgId = await requireOrgId()
       const resumen = await db.query.resumenTarjetas.findFirst({
-        where: eq(resumenTarjetas.id, resumenId),
+        where: and(eq(resumenTarjetas.id, resumenId), eq(resumenTarjetas.orgId, orgId)),
         with: { lineas: true },
       })
       if (!resumen) return { error: "Resumen no encontrado" }

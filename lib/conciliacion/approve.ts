@@ -4,8 +4,8 @@ import { centavosAString, TOLERANCIA_CUADRE } from "@/lib/conciliacion/matching"
 import { siguientePeriodo } from "@/lib/conciliacion/periodo"
 import { db } from "@/lib/db"
 import { conciliaciones } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
-import { currentUserId } from "@/lib/auth/current-user"
+import { and, eq } from "drizzle-orm"
+import { currentUserId, requireOrgId } from "@/lib/auth/current-user"
 
 export type ApproveResult =
   | {
@@ -19,7 +19,8 @@ export async function approveConciliacion(
   sessionId: string,
   aceptarDiferencia = false,
 ): Promise<ApproveResult> {
-  const session = await getConciliacion(sessionId)
+  const orgId = await requireOrgId()
+  const session = await getConciliacion(sessionId, orgId)
   if (!session) return { error: "Sesión no encontrada" }
 
   if (session.stage !== "done") {
@@ -35,7 +36,7 @@ export async function approveConciliacion(
   }
 
   if (session.bankId && session.saldoFinal != null) {
-    await patchSaldo(session.bankId, {
+    await patchSaldo(session.bankId, orgId, {
       saldoConciliado: session.saldoFinal,
       fechaConciliacion: new Date().toISOString(),
     })
@@ -44,7 +45,7 @@ export async function approveConciliacion(
   // Archiva la conciliación: sale de "Tareas activas" (GET /api/tasks la excluye).
   await db.update(conciliaciones)
     .set({ stage: "aprobada", updatedAt: new Date().toISOString(), updatedBy: await currentUserId() })
-    .where(eq(conciliaciones.id, sessionId))
+    .where(and(eq(conciliaciones.id, sessionId), eq(conciliaciones.orgId, orgId)))
 
   return {
     ok: true,

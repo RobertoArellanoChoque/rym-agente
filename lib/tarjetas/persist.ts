@@ -9,7 +9,11 @@ import type { TarjetaResult } from "@/lib/tarjetas/extractor"
 // líneas en una transacción, tipoLinea sin setear (default "cargo" del schema).
 export async function persistTarjeta(
   result: TarjetaResult,
-  createdBy: string | null
+  createdBy: string | null,
+  // ponytail: default null en vez de required — app/api/orchestrator/upload/route.ts
+  // y lib/drive/sync.ts todavía no pasan orgId (fuera de este scope); actualizarlos
+  // para setearlo cuando se migren a multi-org.
+  orgId: string | null = null
 ): Promise<{ resumenId: string; totalMonto: number }> {
   const now = new Date().toISOString()
   const resumenId = crypto.randomUUID()
@@ -23,6 +27,7 @@ export async function persistTarjeta(
       totalMonto,
       creadoEn: now,
       createdBy,
+      orgId,
     })
     if (result.lineas.length > 0) {
       await tx.insert(lineasTarjeta).values(result.lineas.map(l => ({

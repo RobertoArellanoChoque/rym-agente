@@ -34,6 +34,12 @@ export async function POST(req: NextRequest) {
   try {
     await persistTango(sessionId, mayor)
   } catch (err) {
+    if (err instanceof Error && err.message === "NO_ACTIVE_ORG") {
+      return NextResponse.json({ error: "No hay organización activa" }, { status: 403 })
+    }
+    if (err instanceof Error && err.message === "La sesión pertenece a otra organización") {
+      return NextResponse.json({ error: err.message }, { status: 403 })
+    }
     console.error("[tango/route] persistTango error:", err)
     return NextResponse.json({ error: "Error guardando el mayor de Tango" }, { status: 500 })
   }

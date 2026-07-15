@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { cleanupSession, sessionExists } from "@/lib/sessions/manager"
-import { removeConciliacion } from "@/lib/conciliacion/registry"
+import { getConciliacion, removeConciliacion } from "@/lib/conciliacion/registry"
+import { requireOrgId } from "@/lib/auth/current-user"
 import { db } from "@/lib/db"
 import { movimientos, movimientosDiferidos } from "@/lib/db/schema"
 import { and, eq } from "drizzle-orm"
@@ -11,6 +12,23 @@ export async function DELETE(req: NextRequest) {
 
   if (!sessionId) {
     return NextResponse.json({ error: "sessionId requerido" }, { status: 400 })
+  }
+
+  let orgId: string
+  try {
+    orgId = await requireOrgId()
+  } catch {
+    return NextResponse.json({ error: "Organización requerida" }, { status: 403 })
+  }
+
+  // Ownership check ANTES de tocar cleanupSession/sessionExists (lib/sessions/manager —
+  // fuera de este scope de archivos): esas funciones borran/leen por id SIN filtrar por
+  // orgId. Si no cortamos acá, un sessionId de otra org "ya gone" (204) evita el 404 pero
+  // seguiría siendo borrable vía cleanupSession más abajo. Tratamos "no es mío" igual que
+  // "ya no existe" — mismo código de respuesta (204), no distingue los dos casos.
+  const owned = await getConciliacion(sessionId, orgId)
+  if (!owned) {
+    return new NextResponse(null, { status: 204 })
   }
 
   // Guard: no borrar si algún diferido resuelto quedó vinculado (conciliadoEnMovimientoId)
@@ -26,7 +44,7 @@ export async function DELETE(req: NextRequest) {
     )
   }
 
-  try { await removeConciliacion(sessionId) } catch { /* already gone */ }
+  try { await removeConciliacion(sessionId, orgId) } catch { /* already gone */ }
 
   if (!(await sessionExists(sessionId))) {
     return new NextResponse(null, { status: 204 }) // already gone, ok

@@ -10,6 +10,7 @@ import { upsertConciliacion } from "@/lib/conciliacion/registry"
 import { db } from "@/lib/db"
 import { nombreMes } from "@/lib/conciliacion/periodo"
 import { MAX_UPLOAD_BYTES } from "@/lib/utils"
+import { requireOrgId } from "@/lib/auth/current-user"
 import type { Movimiento } from "@/lib/types"
 
 const MAX_BATCH_FILES = 20
@@ -36,6 +37,15 @@ type BancoItem = { kind: "banco"; periodo?: string; bankId: string; ext: Extract
 type TangoItem = { kind: "tango"; periodo?: string; mayor: MayorTango; file: string }
 
 export async function POST(req: NextRequest) {
+  // Chequeo temprano: persistBanco/persistTango exigen org activa igual, pero acá evitamos
+  // gastar OCR/LLM (el costo real del batch) en archivos que van a fallar al persistir.
+  let orgId: string
+  try {
+    orgId = await requireOrgId()
+  } catch {
+    return NextResponse.json({ error: "No hay organización activa" }, { status: 403 })
+  }
+
   const formData = await req.formData()
   const files = formData.getAll("files").filter((f): f is File => f instanceof File)
   if (files.length === 0) return NextResponse.json({ error: "No se recibieron archivos" }, { status: 400 })
@@ -119,11 +129,11 @@ export async function POST(req: NextRequest) {
             stage: "done",
             movimientosCount: res.movimientos.length, asientosCount: res.asientos.length,
             saldoBanco: res.saldoBanco, saldoMayor: res.saldoMayor, diferencia: res.diferencia,
-          }, tx)
+          }, orgId, tx)
         })
         diferencia = res.diferencia
       } else if (!g.banco && g.tango) {
-        await upsertConciliacion(g.sessionId, { label: g.label })
+        await upsertConciliacion(g.sessionId, { label: g.label }, orgId)
       }
       sesiones.push({ sessionId: g.sessionId, label: g.label, banco: !!g.banco, tango: !!g.tango, diferencia })
     } catch (err) {

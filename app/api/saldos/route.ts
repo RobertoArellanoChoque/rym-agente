@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getSaldos, setSaldo, patchSaldo } from "@/lib/saldos/manager"
+import { requireOrgId } from "@/lib/auth/current-user"
 
 const PutSaldoSchema = z.object({
   bankId: z.string().min(1),
@@ -15,12 +16,20 @@ const PatchSaldoSchema = z.object({
   fechaConciliacion: z.string().min(1),
 })
 
+function orgErrorOr500(e: unknown, log: string) {
+  if (e instanceof Error && e.message === "NO_ACTIVE_ORG") {
+    return NextResponse.json({ error: "No hay organización activa" }, { status: 403 })
+  }
+  console.error(log, e)
+  return NextResponse.json({ error: "Error interno" }, { status: 500 })
+}
+
 export async function GET() {
   try {
-    return NextResponse.json(await getSaldos())
+    const orgId = await requireOrgId()
+    return NextResponse.json(await getSaldos(orgId))
   } catch (e) {
-    console.error("[GET /api/saldos]", e)
-    return NextResponse.json({ error: "Error interno" }, { status: 500 })
+    return orgErrorOr500(e, "[GET /api/saldos]")
   }
 }
 
@@ -31,8 +40,9 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Datos inválidos" }, { status: 400 })
     }
     const { bankId, bankName, ultimoSaldo, ultimaFecha } = parsed.data
+    const orgId = await requireOrgId()
 
-    await setSaldo(bankId, {
+    await setSaldo(bankId, orgId, {
       bankName,
       ultimoSaldo,
       ultimaFecha,
@@ -42,8 +52,7 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json({ ok: true })
   } catch (e) {
-    console.error("[PUT /api/saldos]", e)
-    return NextResponse.json({ error: "Error interno" }, { status: 500 })
+    return orgErrorOr500(e, "[PUT /api/saldos]")
   }
 }
 
@@ -57,14 +66,14 @@ export async function PATCH(req: NextRequest) {
       )
     }
     const { bankId, saldoConciliado, fechaConciliacion } = parsed.data
+    const orgId = await requireOrgId()
 
-    const saldos = await getSaldos()
+    const saldos = await getSaldos(orgId)
     if (!saldos[bankId]) return NextResponse.json({ error: "Banco no encontrado" }, { status: 404 })
 
-    await patchSaldo(bankId, { saldoConciliado, fechaConciliacion })
+    await patchSaldo(bankId, orgId, { saldoConciliado, fechaConciliacion })
     return NextResponse.json({ ok: true })
   } catch (e) {
-    console.error("[PATCH /api/saldos]", e)
-    return NextResponse.json({ error: "Error interno" }, { status: 500 })
+    return orgErrorOr500(e, "[PATCH /api/saldos]")
   }
 }

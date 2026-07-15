@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { movimientosDiferidos } from "@/lib/db/schema"
 import { and, asc, eq } from "drizzle-orm"
+import { requireOrgId } from "@/lib/auth/current-user"
 
 // Estados que este PATCH puede setear (transición desde "pendiente" al recibir el extracto del período destino).
 const ESTADOS_PATCH = ["conciliado", "descartado"] as const
@@ -16,8 +17,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "bankId y periodo requeridos" }, { status: 400 })
     }
 
+    const orgId = await requireOrgId()
+
     const rows = await db.select().from(movimientosDiferidos)
       .where(and(
+        eq(movimientosDiferidos.orgId, orgId),
         eq(movimientosDiferidos.bancoId, bankId),
         eq(movimientosDiferidos.periodoDestino, periodo),
         eq(movimientosDiferidos.estado, "pendiente"),
@@ -26,6 +30,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(rows)
   } catch (e) {
+    if (e instanceof Error && e.message === "NO_ACTIVE_ORG") {
+      return NextResponse.json({ error: "No hay organización activa" }, { status: 403 })
+    }
     console.error("[GET /api/conciliacion/diferidos]", e)
     return NextResponse.json({ error: "Error interno" }, { status: 500 })
   }
@@ -46,17 +53,22 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "estado inválido" }, { status: 400 })
     }
 
+    const orgId = await requireOrgId()
+
     const patch: { estado: string; conciliadoEnMovimientoId?: string | null } = { estado }
     if (conciliadoEnMovimientoId !== undefined) patch.conciliadoEnMovimientoId = conciliadoEnMovimientoId
 
     const [row] = await db.update(movimientosDiferidos)
       .set(patch)
-      .where(eq(movimientosDiferidos.id, diferidoId))
+      .where(and(eq(movimientosDiferidos.id, diferidoId), eq(movimientosDiferidos.orgId, orgId)))
       .returning()
 
     if (!row) return NextResponse.json({ error: "Diferido no encontrado" }, { status: 404 })
     return NextResponse.json({ ok: true })
   } catch (e) {
+    if (e instanceof Error && e.message === "NO_ACTIVE_ORG") {
+      return NextResponse.json({ error: "No hay organización activa" }, { status: 403 })
+    }
     console.error("[PATCH /api/conciliacion/diferidos]", e)
     return NextResponse.json({ error: "Error interno" }, { status: 500 })
   }

@@ -4,8 +4,8 @@ import { promises as fs } from "fs"
 import crypto from "crypto"
 import { db } from "@/lib/db"
 import { conciliaciones } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
-import { currentUserId } from "@/lib/auth/current-user"
+import { and, eq } from "drizzle-orm"
+import { currentUserId, requireOrgId } from "@/lib/auth/current-user"
 
 // Session files (extracto.md) stay on filesystem — only OCR artifacts, not data
 const SESSION_BASE = process.env.SESSION_BASE ?? path.join(os.homedir(), ".rym-agente", "sessions")
@@ -19,6 +19,7 @@ export async function createSession(label?: string): Promise<string> {
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
   const userId = await currentUserId()
+  const orgId = await requireOrgId()
   // Create dir for OCR files (extracto.md)
   await fs.mkdir(getSessionDir(id), { recursive: true, mode: 0o700 })
   await db.insert(conciliaciones).values({
@@ -29,20 +30,23 @@ export async function createSession(label?: string): Promise<string> {
     updatedAt: now,
     createdBy: userId,
     updatedBy: userId,
+    orgId,
   })
   return id
 }
 
 export async function sessionExists(sessionId: string): Promise<boolean> {
+  const orgId = await requireOrgId()
   const [row] = await db.select({ id: conciliaciones.id })
     .from(conciliaciones)
-    .where(eq(conciliaciones.id, sessionId))
+    .where(and(eq(conciliaciones.id, sessionId), eq(conciliaciones.orgId, orgId)))
     .limit(1)
   return row != null
 }
 
 export async function cleanupSession(sessionId: string): Promise<void> {
-  await db.delete(conciliaciones).where(eq(conciliaciones.id, sessionId))
+  const orgId = await requireOrgId()
+  await db.delete(conciliaciones).where(and(eq(conciliaciones.id, sessionId), eq(conciliaciones.orgId, orgId)))
   // Also remove any leftover OCR files
   const dir = getSessionDir(sessionId)
   await fs.rm(dir, { recursive: true, force: true })

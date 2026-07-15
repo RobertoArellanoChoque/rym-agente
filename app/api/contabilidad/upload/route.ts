@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import crypto from "crypto"
 import { db } from "@/lib/db"
 import { retencionesArca, retencionesTango, sesiones } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { parseArcaXlsx } from "@/lib/contabilidad/parsers/arca"
 import { parseTangoXlsx } from "@/lib/contabilidad/parsers/tango"
 import { MAX_UPLOAD_BYTES } from "@/lib/utils"
-import { currentUserId } from "@/lib/auth/current-user"
+import { currentUserId, requireOrgId } from "@/lib/auth/current-user"
 
 async function detectTipo(buffer: ArrayBuffer): Promise<"arca" | "tango"> {
   const ExcelJS = (await import("exceljs")).default
@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
     const loteId = crypto.randomUUID()
     const now = new Date().toISOString()
     const userId = await currentUserId()
+    const orgId = await requireOrgId()
 
     if (tipo === "tango") {
       const { filas } = await parseTangoXlsx(buffer)
@@ -50,14 +51,14 @@ export async function POST(req: NextRequest) {
           id: crypto.randomUUID(), loteId,
           codCta: f.codCta, descCta: f.descCta, fecha: f.fecha,
           codComp: f.codComp, nComp: f.nComp,
-          debe: f.debe, haber: f.haber, saldo: f.saldo, creadoEn: now, createdBy: userId,
+          debe: f.debe, haber: f.haber, saldo: f.saldo, creadoEn: now, createdBy: userId, orgId,
         })))
         if (sesionId) {
-          const [existing] = await tx.select().from(sesiones).where(eq(sesiones.id, sesionId)).for("update").limit(1)
+          const [existing] = await tx.select().from(sesiones).where(and(eq(sesiones.id, sesionId), eq(sesiones.orgId, orgId))).for("update").limit(1)
           const datos = { ...(existing?.datos ?? {}) } as Record<string, unknown>
           datos.tango = { count: filas.length, filas }
           const estado = datos.arca && datos.tango ? "completado" : "activo"
-          await tx.update(sesiones).set({ datos, estado, updatedAt: now, updatedBy: userId }).where(eq(sesiones.id, sesionId))
+          await tx.update(sesiones).set({ datos, estado, updatedAt: now, updatedBy: userId }).where(and(eq(sesiones.id, sesionId), eq(sesiones.orgId, orgId)))
         }
       })
       return NextResponse.json({ tipo: "tango", count: filas.length, filas })
@@ -70,14 +71,14 @@ export async function POST(req: NextRequest) {
           id: crypto.randomUUID(), loteId, jurisdiccion,
           cuitAgente: f.cuitAgente, fechaRetencion: f.fechaRetencion,
           tipo: f.tipo, letra: f.letra, nroComprobante: f.nroComprobante,
-          nroComprOrigen: f.nroComprOrigen, importe: f.importe, creadoEn: now, createdBy: userId,
+          nroComprOrigen: f.nroComprOrigen, importe: f.importe, creadoEn: now, createdBy: userId, orgId,
         })))
         if (sesionId) {
-          const [existing] = await tx.select().from(sesiones).where(eq(sesiones.id, sesionId)).for("update").limit(1)
+          const [existing] = await tx.select().from(sesiones).where(and(eq(sesiones.id, sesionId), eq(sesiones.orgId, orgId))).for("update").limit(1)
           const datos = { ...(existing?.datos ?? {}) } as Record<string, unknown>
           datos.arca = { jurisdiccion, count: filas.length, filas }
           const estado = datos.arca && datos.tango ? "completado" : "activo"
-          await tx.update(sesiones).set({ datos, estado, updatedAt: now, updatedBy: userId }).where(eq(sesiones.id, sesionId))
+          await tx.update(sesiones).set({ datos, estado, updatedAt: now, updatedBy: userId }).where(and(eq(sesiones.id, sesionId), eq(sesiones.orgId, orgId)))
         }
       })
       return NextResponse.json({ tipo: "arca", jurisdiccion, count: filas.length, filas })
