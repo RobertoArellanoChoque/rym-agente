@@ -23,8 +23,9 @@ export default async function DriveAdminPage() {
   if (!(await isAdmin())) notFound()
 
   const configured = !!(
-    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
-    process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY &&
+    process.env.GOOGLE_OAUTH_CLIENT_ID &&
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET &&
+    process.env.GOOGLE_OAUTH_REFRESH_TOKEN &&
     process.env.GOOGLE_DRIVE_FOLDER_ID
   )
   const [state] = await db.select().from(driveSyncState).where(eq(driveSyncState.id, "default")).limit(1)

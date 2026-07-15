@@ -15,8 +15,9 @@ export async function POST(req: NextRequest) {
     const file = form.get("file") as File | null
     if (!file) return NextResponse.json({ error: "No se recibió archivo" }, { status: 400 })
 
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-      return NextResponse.json({ error: "Solo se aceptan archivos PDF" }, { status: 400 })
+    const ext = file.name.toLowerCase().split(".").pop()
+    if (!["pdf", "xlsx", "xls", "csv"].includes(ext ?? "")) {
+      return NextResponse.json({ error: "Formato no soportado. Usá PDF, Excel o CSV." }, { status: 400 })
     }
     if (file.size > MAX_UPLOAD_BYTES) {
       return NextResponse.json({ error: "Archivo demasiado grande (máx 20 MB)" }, { status: 413 })
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
 
     let extraction
     try {
-      extraction = await procesarExtractoTarjeta(buffer)
+      extraction = await procesarExtractoTarjeta(buffer, file.name)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       if (msg === "MISTRAL_API_KEY_NOT_CONFIGURED") {

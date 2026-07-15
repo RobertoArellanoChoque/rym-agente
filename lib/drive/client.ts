@@ -8,15 +8,17 @@ function requireEnv(name: string): string {
   return v
 }
 
-/** Cliente autenticado de Drive API v3 vía Service Account (drive.readonly). */
+// ponytail: OAuth2 a cuenta personal en vez de service account — la org de Google
+// del usuario bloquea iam.disableServiceAccountKeyCreation. Subir a cuenta
+// compartida del estudio cuando se resuelva esa política (ver client_id/secret/
+// refresh_token abajo, todos ligados a la cuenta que dio el consentimiento).
+/** Cliente autenticado de Drive API v3 vía OAuth2 + refresh token (drive.readonly). */
 export function getDriveClient(): drive_v3.Drive {
-  const email = requireEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL")
-  const key = requireEnv("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY").replace(/\\n/g, "\n")
-  const auth = new google.auth.JWT({
-    email,
-    key,
-    scopes: ["https://www.googleapis.com/auth/drive.readonly"],
-  })
+  const clientId = requireEnv("GOOGLE_OAUTH_CLIENT_ID")
+  const clientSecret = requireEnv("GOOGLE_OAUTH_CLIENT_SECRET")
+  const refreshToken = requireEnv("GOOGLE_OAUTH_REFRESH_TOKEN")
+  const auth = new google.auth.OAuth2(clientId, clientSecret)
+  auth.setCredentials({ refresh_token: refreshToken })
   return google.drive({ version: "v3", auth })
 }
 

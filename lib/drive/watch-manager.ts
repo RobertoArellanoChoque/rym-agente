@@ -9,7 +9,7 @@ const CHANNEL_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 días — máximo soportado 
 
 /**
  * Crea o renueva el canal de webhook de Google Drive (drive.changes.watch — vigila
- * TODOS los cambios del Drive del service account; el filtro por carpeta se hace
+ * TODOS los cambios del Drive de la cuenta autenticada; el filtro por carpeta se hace
  * en syncDrive() al procesar cada change). Sin credenciales configuradas, no rompe
  * el arranque del server: loguea un warning y sale.
  */

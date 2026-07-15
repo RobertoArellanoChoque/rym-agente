@@ -12,7 +12,7 @@ export async function GET() {
   const archivos = await db.select().from(driveArchivos).orderBy(desc(driveArchivos.createdAt)).limit(20)
 
   return NextResponse.json({
-    configured: !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && process.env.GOOGLE_DRIVE_FOLDER_ID),
+    configured: !!(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET && process.env.GOOGLE_OAUTH_REFRESH_TOKEN && process.env.GOOGLE_DRIVE_FOLDER_ID),
     state: state ?? null,
     archivos,
   })

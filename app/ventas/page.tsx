@@ -216,11 +216,11 @@ function VentasContent() {
                     className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors
                       ${dragging ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30"}`}
                   >
-                    <input ref={inputRef} type="file" accept=".pdf" className="hidden"
+                    <input ref={inputRef} type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden"
                       onChange={e => e.target.files?.[0] && setFile(e.target.files[0])} />
                     <Upload className="h-8 w-8 mx-auto mb-3 text-muted-foreground" />
-                    <p className="text-sm font-medium">Arrastrá el PDF de pago</p>
-                    <p className="text-xs text-muted-foreground mt-1">Orden de pago, recibo de retención — solo PDF</p>
+                    <p className="text-sm font-medium">Arrastrá el comprobante de pago</p>
+                    <p className="text-xs text-muted-foreground mt-1">Orden de pago, recibo de retención — PDF, Excel o CSV</p>
                   </div>
 
                   {file && (

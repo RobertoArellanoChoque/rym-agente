@@ -141,7 +141,7 @@ export function TarjetaFlow({ onImported }: { onImported?: () => void }) {
         <div>
           <h1 className="text-lg font-bold">Impuestos de tarjeta</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Subí el PDF del resumen para extraer los impuestos (IVA, IIBB, percepciones, retenciones).
+            Subí el resumen (PDF, Excel o CSV) para extraer los impuestos (IVA, IIBB, percepciones, retenciones).
           </p>
         </div>
         <TarjetaUpload

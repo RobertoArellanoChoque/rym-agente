@@ -25,7 +25,11 @@ import { persistPago } from "@/lib/ventas/persist"
 import type { Asiento } from "@/lib/types"
 
 const CREATED_BY = "drive-sync"
-const ERROR_FORMATO_NO_SOPORTADO = "Formato no soportado para tarjetas vía Drive, usar carga manual"
+// Google Sheets nativo no tiene bytes descargables vía files.get (alt=media 403 File not
+// found) — hay que exportarlo a xlsx. Tampoco trae extensión en el nombre, así que el resto
+// del pipeline (clasificación + extractores, todos dispatch-por-extensión) usa nombreEfectivo.
+const GOOGLE_SHEET_MIME = "application/vnd.google-apps.spreadsheet"
+const GOOGLE_SHEET_EXPORT_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 // orgId "del estudio" para todo lo que sincroniza Drive. syncDrive() corre disparada
 // por un webhook público (sin sesión Clerk), así que requireOrgId()/currentOrgId()
@@ -136,6 +140,8 @@ async function processFile(file: drive_v3.Schema$File): Promise<boolean> {
   const nombre = file.name ?? "sin-nombre"
   const mimeType = file.mimeType ?? "application/octet-stream"
   const tamano = Number(file.size ?? 0)
+  const esGoogleSheet = mimeType === GOOGLE_SHEET_MIME
+  const nombreEfectivo = esGoogleSheet && !/\.(xlsx|xls|csv)$/i.test(nombre) ? `${nombre}.xlsx` : nombre
 
   await db.insert(driveArchivos)
     .values({ id: fileId, nombre, mimeType, tamano, estado: "pendiente", createdAt: new Date().toISOString() })
@@ -150,18 +156,18 @@ async function processFile(file: drive_v3.Schema$File): Promise<boolean> {
     const orgId = await resolverOrgIdEstudio()
 
     const drive = getDriveClient()
-    const { data } = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" })
+    const { data } = esGoogleSheet
+      ? await drive.files.export({ fileId, mimeType: GOOGLE_SHEET_EXPORT_MIME }, { responseType: "arraybuffer" })
+      : await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" })
     const buffer = data as ArrayBuffer
 
-    const rawText = await extractRawText(buffer, nombre)
+    const rawText = await extractRawText(buffer, nombreEfectivo)
     const classification = classifyText(rawText)
     await db.update(driveArchivos).set({ clasificacion: classification.type }).where(eq(driveArchivos.id, fileId))
 
-    const extFile = nombre.split(".").pop()?.toLowerCase()
-
     switch (classification.type) {
       case "banco": {
-        const ext = await extraerBanco(buffer, nombre)
+        const ext = await extraerBanco(buffer, nombreEfectivo)
         const sessionId = await findOrCreateConciliacionBanco(ext.bankResult.bankId, ext.periodo, orgId)
         await persistBanco(sessionId, ext)
         await setConciliacionOrgId(sessionId, orgId)
@@ -169,7 +175,7 @@ async function processFile(file: drive_v3.Schema$File): Promise<boolean> {
         break
       }
       case "tango": {
-        const mayor = await extraerTango(buffer, nombre)
+        const mayor = await extraerTango(buffer, nombreEfectivo)
         const { id: sessionId, isNew } = await findConciliacionParaTango(mayor.periodo, orgId)
         await persistTango(sessionId, mayor)
         await setConciliacionOrgId(sessionId, orgId)
@@ -178,14 +184,12 @@ async function processFile(file: drive_v3.Schema$File): Promise<boolean> {
         break
       }
       case "tarjeta": {
-        if (extFile !== "pdf") throw new Error(ERROR_FORMATO_NO_SOPORTADO)
-        const { result } = await procesarExtractoTarjeta(buffer)
+        const { result } = await procesarExtractoTarjeta(buffer, nombreEfectivo)
         await persistTarjeta(result, CREATED_BY, orgId)
         break
       }
       case "pago_retencion": {
-        if (extFile !== "pdf") throw new Error(ERROR_FORMATO_NO_SOPORTADO)
-        const { result } = await procesarComprobantePago(buffer)
+        const { result } = await procesarComprobantePago(buffer, nombreEfectivo)
         await persistPago(result, CREATED_BY, orgId)
         break
       }

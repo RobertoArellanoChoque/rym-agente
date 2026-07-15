@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { generateJSON } from "@/lib/ai/client"
 import { pdfToMarkdown } from "@/lib/extractos/mistral-ocr"
+import { extractFullText } from "@/lib/extractos/raw-text"
 
 const RetencionSchema = z.object({
   tipo: z.string(),
@@ -34,8 +35,9 @@ Extraé del comprobante:
 - montoNeto: importe neto acreditado tras retenciones, en centavos (× 100)
 Todos los montos deben estar en centavos (valor monetario × 100, sin decimales).`
 
-export async function procesarComprobantePago(buffer: ArrayBuffer): Promise<{ markdown: string; result: PagoResult }> {
-  const markdown = await pdfToMarkdown(buffer)
+export async function procesarComprobantePago(buffer: ArrayBuffer, filename: string): Promise<{ markdown: string; result: PagoResult }> {
+  const ext = filename.split(".").pop()?.toLowerCase()
+  const markdown = ext === "pdf" ? await pdfToMarkdown(buffer) : await extractFullText(buffer, filename)
   const result = await generateJSON(
     `Analizá este comprobante de pago argentino y extraé todos los datos de retenciones impositivas:\n\n${markdown}`,
     PagoSchema,

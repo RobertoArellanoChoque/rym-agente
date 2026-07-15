@@ -1,10 +1,11 @@
 import { z } from "zod"
 import { generateJSON } from "@/lib/ai/client"
 import { pdfToMarkdown } from "@/lib/extractos/mistral-ocr"
+import { extractFullText } from "@/lib/extractos/raw-text"
 
 export const TARJETA_SYSTEM_PROMPT = `Sos un contador argentino experto en extractos de tarjetas de crédito.
 
-El input es texto Markdown generado por OCR de un PDF de resumen de tarjeta de crédito.
+El input es texto de un resumen de tarjeta de crédito (OCR de un PDF, o contenido de una planilla Excel/CSV/Google Sheets).
 
 OBJETIVO: Extraé ÚNICAMENTE las líneas de naturaleza impositiva. Ignorá compras, consumos y servicios comerciales.
 
@@ -53,11 +54,12 @@ export const TarjetaResultSchema = z.object({
 export type TarjetaResult = z.infer<typeof TarjetaResultSchema>
 export type LineaTarjeta = z.infer<typeof LineaSchema>
 
-export async function procesarExtractoTarjeta(buffer: ArrayBuffer): Promise<{
+export async function procesarExtractoTarjeta(buffer: ArrayBuffer, filename: string): Promise<{
   markdown: string
   result: TarjetaResult
 }> {
-  const markdown = await pdfToMarkdown(buffer)
+  const ext = filename.split(".").pop()?.toLowerCase()
+  const markdown = ext === "pdf" ? await pdfToMarkdown(buffer) : await extractFullText(buffer, filename)
   const result = await generateJSON(markdown, TarjetaResultSchema, TARJETA_SYSTEM_PROMPT, "tarjetas")
   return { markdown, result }
 }

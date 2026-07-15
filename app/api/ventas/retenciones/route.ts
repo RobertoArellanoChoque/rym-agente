@@ -23,8 +23,9 @@ export async function POST(req: NextRequest) {
   const sesionId = formData.get("sesionId") as string | null
 
   if (!file) return NextResponse.json({ error: "No se recibió archivo" }, { status: 400 })
-  if (!file.name.toLowerCase().endsWith(".pdf"))
-    return NextResponse.json({ error: "Solo se aceptan archivos PDF" }, { status: 400 })
+  const ext = file.name.toLowerCase().split(".").pop()
+  if (!["pdf", "xlsx", "xls", "csv"].includes(ext ?? ""))
+    return NextResponse.json({ error: "Formato no soportado. Usá PDF, Excel o CSV." }, { status: 400 })
   if (file.size > MAX_UPLOAD_BYTES)
     return NextResponse.json({ error: "Archivo demasiado grande (máx 20 MB)" }, { status: 413 })
 
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
   const userId = await currentUserId()
 
   try {
-    const { result } = await procesarComprobantePago(buffer)
+    const { result } = await procesarComprobantePago(buffer, file.name)
 
     if (sesionId) {
       const now = new Date().toISOString()

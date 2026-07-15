@@ -40,8 +40,8 @@ function buildTangoSummary(sessionId?: string): OrchestratorResult {
   }
 }
 
-async function handleTarjeta(buffer: ArrayBuffer, orgId: string): Promise<OrchestratorResult> {
-  const { result } = await procesarExtractoTarjeta(buffer)
+async function handleTarjeta(buffer: ArrayBuffer, filename: string, orgId: string): Promise<OrchestratorResult> {
+  const { result } = await procesarExtractoTarjeta(buffer, filename)
   const { resumenId, totalMonto } = await persistTarjeta(result, await currentUserId(), orgId)
 
   return {
@@ -52,8 +52,8 @@ async function handleTarjeta(buffer: ArrayBuffer, orgId: string): Promise<Orches
   }
 }
 
-async function handlePago(buffer: ArrayBuffer, orgId: string): Promise<OrchestratorResult> {
-  const { result } = await procesarComprobantePago(buffer)
+async function handlePago(buffer: ArrayBuffer, filename: string, orgId: string): Promise<OrchestratorResult> {
+  const { result } = await procesarComprobantePago(buffer, filename)
   const pago = result as PagoResult
   const totalRetenciones = pago.retenciones.reduce((s, r) => s + r.monto, 0)
   const tiposRet = pago.retenciones.map((r) => r.tipo).join(", ")
@@ -138,28 +138,12 @@ export async function POST(req: NextRequest) {
       }
 
       case "tarjeta": {
-        if (isPdf) {
-          result = await handleTarjeta(buffer, orgId)
-        } else {
-          result = {
-            classification,
-            summary: "Detecté un resumen de tarjeta. Para Excel/CSV subilo directamente en el módulo **Proveedores**.",
-            nextStep: "Ir a Proveedores y subir el archivo.",
-          }
-        }
+        result = await handleTarjeta(buffer, file.name, orgId)
         break
       }
 
       case "pago_retencion": {
-        if (isPdf) {
-          result = await handlePago(buffer, orgId)
-        } else {
-          result = {
-            classification,
-            summary: "Detecté un comprobante de pago. Para Excel/CSV subilo directamente en el módulo **Ventas**.",
-            nextStep: "Ir a Ventas y subir el archivo.",
-          }
-        }
+        result = await handlePago(buffer, file.name, orgId)
         break
       }
 
