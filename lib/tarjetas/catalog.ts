@@ -1,7 +1,7 @@
 import crypto from "crypto"
 import { db } from "@/lib/db"
 import { tarjetasMaestras } from "@/lib/db/schema"
-import { resolverOrgIdEstudio } from "@/lib/drive/sync"
+import { resolverOrgIdEstudio } from "@/lib/orchestrator/procesar-archivo"
 
 export const TARJETAS_MAESTRAS = [
   { nombre: "TARJETA VISA FRANCES RYM", banco: "FRANCES", tipo: "VISA" },

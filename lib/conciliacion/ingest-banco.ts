@@ -4,8 +4,8 @@ import { z } from "zod"
 import { getSessionDir } from "@/lib/sessions/manager"
 import { extractRawText } from "@/lib/extractos/raw-text"
 import { pdfToMarkdown } from "@/lib/extractos/mistral-ocr"
-import { detectBankByKeyword } from "@/lib/bancos/registry"
-import { ALL_CONFIGS } from "@/lib/bancos/configs"
+import { detectBankByKeyword, getBancos, findBanco } from "@/lib/bancos/registry"
+import type { BankConfig } from "@/lib/bancos/types"
 import { generateJSON } from "@/lib/ai/client"
 import { parseExtractoBanco } from "@/lib/extractos/parse-direct"
 import { categorizarMovimiento } from "@/lib/extractos/categorize"
@@ -75,7 +75,7 @@ export async function extraerBanco(buffer: ArrayBuffer, filename: string): Promi
   let movimientos: z.infer<typeof MovimientoSchema>[] = []
   let saldoFinalAI: number | undefined
   let saldoAnteriorAI: number | undefined
-  let bankConfig = null as typeof ALL_CONFIGS[0] | null
+  let bankConfig: BankConfig | null = null
   let bankResult: BankDetectionResult
   let markdown: string | undefined
 
@@ -89,16 +89,21 @@ export async function extraerBanco(buffer: ArrayBuffer, filename: string): Promi
       throw new IngestBancoError("OCR_FAILED")
     }
     const detectionText = markdown.slice(0, DETECT_CHARS)
-    const detected = detectBankByKeyword(detectionText)
+    const detected = await detectBankByKeyword(detectionText)
     if (detected) {
       bankConfig = detected
       bankResult = { bankId: detected.id, bankName: detected.name, confidence: "high" }
     } else {
       try {
-        bankResult = await generateJSON(
-          `Identificá a qué banco argentino pertenece este extracto. bankId en minúsculas.\n\n${detectionText}`,
+        const catalogo = (await getBancos()).map((b) => `- ${b.id}: ${b.name}`).join("\n")
+        const result = await generateJSON(
+          `Identificá a qué banco argentino pertenece este extracto. Elegí bankId de esta lista, o "unknown" si no es ninguno:\n${catalogo}\n\n${detectionText}`,
           BankDetectionSchema, "Sos un experto en extractos bancarios argentinos.", "deteccion-banco")
-        bankConfig = ALL_CONFIGS.find((c) => c.id === bankResult.bankId) ?? null
+        // Validar contra el catálogo: el LLM no puede filtrar bankIds inventados
+        bankConfig = await findBanco(result.bankId)
+        bankResult = bankConfig
+          ? { bankId: bankConfig.id, bankName: bankConfig.name, confidence: result.confidence }
+          : { bankId: "unknown", bankName: "Banco desconocido", confidence: "low" }
       } catch {
         bankResult = { bankId: "unknown", bankName: "Banco desconocido", confidence: "low" }
       }
@@ -132,7 +137,7 @@ export async function extraerBanco(buffer: ArrayBuffer, filename: string): Promi
     } catch {
       if (!usedDirectParse) throw new IngestBancoError("READ_FAILED")
     }
-    const detected = detectBankByKeyword(rawText)
+    const detected = await detectBankByKeyword(rawText)
     if (detected) {
       bankConfig = detected
       bankResult = { bankId: detected.id, bankName: detected.name, confidence: "high" }
@@ -179,9 +184,9 @@ export async function extraerBanco(buffer: ArrayBuffer, filename: string): Promi
   }
 }
 
-/** Persiste un extracto extraído en una sesión existente. */
-export async function persistBanco(sessionId: string, ext: ExtractoBanco): Promise<void> {
-  const orgId = await requireOrgId()
+/** Persiste un extracto extraído en una sesión existente. orgId explícito para callers sin sesión Clerk (ingesta server-to-server). */
+export async function persistBanco(sessionId: string, ext: ExtractoBanco, orgIdExplicito?: string): Promise<void> {
+  const orgId = orgIdExplicito ?? await requireOrgId()
   // Defensivo: si la sesión ya fue creada por otra org (p.ej. sessionId adivinado/reusado),
   // cortar antes de escribir nada. sessionExists() (lib/sessions/manager.ts) no filtra por
   // org todavía — este chequeo es la última línea de defensa acá.

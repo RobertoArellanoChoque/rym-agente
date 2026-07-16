@@ -46,13 +46,13 @@ export function TarjetaUpload({ processing, stepIndex, error, onUpload }: Tarjet
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf,.xlsx,.xls,.csv"
+          accept=".pdf"
           className="hidden"
           onChange={(e) => e.target.files?.[0] && setFile(e.target.files[0])}
         />
         <Upload className="h-8 w-8 mx-auto mb-3 text-muted-foreground" />
         <p className="text-sm font-medium">Arrastrá el resumen de tarjeta</p>
-        <p className="text-xs text-muted-foreground mt-1">PDF, Excel o CSV</p>
+        <p className="text-xs text-muted-foreground mt-1">Solo PDF</p>
       </div>
 
       {file && (

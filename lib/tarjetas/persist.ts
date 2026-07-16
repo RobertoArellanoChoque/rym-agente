@@ -5,14 +5,13 @@ import { toCentavos } from "@/lib/utils"
 import type { TarjetaResult } from "@/lib/tarjetas/extractor"
 
 // Extraído de app/api/orchestrator/upload/route.ts (handleTarjeta) para reusar
-// desde el sync de Google Drive. Comportamiento idéntico al original: resumen +
-// líneas en una transacción, tipoLinea sin setear (default "cargo" del schema).
+// desde la ingesta server-to-server (/api/ingest/bulk). Comportamiento idéntico al
+// original: resumen + líneas en una transacción, tipoLinea sin setear (default "cargo").
 export async function persistTarjeta(
   result: TarjetaResult,
   createdBy: string | null,
   // ponytail: default null en vez de required — app/api/orchestrator/upload/route.ts
-  // y lib/drive/sync.ts todavía no pasan orgId (fuera de este scope); actualizarlos
-  // para setearlo cuando se migren a multi-org.
+  // todavía no pasa orgId (fuera de este scope); setearlo cuando se migre a multi-org.
   orgId: string | null = null
 ): Promise<{ resumenId: string; totalMonto: number }> {
   const now = new Date().toISOString()

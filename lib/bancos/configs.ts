@@ -1,5 +1,9 @@
+import { db } from "@/lib/db"
+import { bancos } from "@/lib/db/schema"
 import type { BankConfig } from "./types"
 
+// Seed del catálogo `bancos` — el runtime lee de DB (lib/bancos/registry.ts).
+// Agregar banco = fila acá + npm run db:seed, o INSERT directo.
 export const ALL_CONFIGS: BankConfig[] = [
   {
     id: "bbva",
@@ -194,3 +198,22 @@ INSTRUCCIONES PARA MOVIMIENTOS:
     excelColumns: { fecha: 0, descripcion: 1, referencia: 2, montoNeto: 3, saldo: 4 },
   },
 ]
+
+/** Siembra ALL_CONFIGS en la tabla `bancos`. onConflictDoNothing → re-correr no pisa ediciones en DB. Devuelve filas nuevas insertadas. */
+export async function seedBancos(): Promise<number> {
+  const inserted = await db.insert(bancos)
+    .values(ALL_CONFIGS.map((c) => ({
+      id: c.id,
+      nombre: c.name,
+      aliases: c.aliases,
+      dateFormat: c.dateFormat,
+      decimalSeparator: c.decimalSeparator,
+      thousandSeparator: c.thousandSeparator,
+      extractionSystemPrompt: c.extractionSystemPrompt ?? null,
+      excelColumns: c.excelColumns ?? null,
+      activo: true,
+    })))
+    .onConflictDoNothing({ target: bancos.id })
+    .returning({ id: bancos.id })
+  return inserted.length
+}

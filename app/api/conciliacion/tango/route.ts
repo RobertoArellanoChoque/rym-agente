@@ -4,7 +4,7 @@ import { extraerTango, persistTango, IngestTangoError } from "@/lib/conciliacion
 import { rateLimit, ipOf } from "@/lib/rate-limit"
 
 export async function POST(req: NextRequest) {
-  if (!(await rateLimit(`upload:${ipOf(req)}`, 10, 60_000)))
+  if (!(await rateLimit(`upload:${ipOf(req)}`, 30, 60_000)))
     return NextResponse.json({ error: "Demasiadas solicitudes, esperá un momento" }, { status: 429 })
   const formData = await req.formData()
   const file = formData.get("file") as File | null

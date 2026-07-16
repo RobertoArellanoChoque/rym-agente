@@ -37,6 +37,12 @@
 
 ## Decisiones
 
+### Jul 2026: Estética "agente AI" (21st.dev)
+- Nuevos tokens: `--success` (verde, reemplaza emerald hardcodeado), `--shadow-glow` (halo del primary), `--radius` 0.5→0.625rem.
+- Primitivas de agente en `components/ai/` (markdown, suggestions, prompt-input, tool-card, message) — vendorizadas de 21st.dev Agent Elements, re-tokenizadas. ChatInterface quedó como container de lógica.
+- Efectos: utility `shimmer` nativo de shadcn/tailwind.css (estados "pensando"/"ejecutando"), `tw-animate-css` para entradas escalonadas. Sin framer-motion.
+- Sign-in: split panel con marca sobre `--sidebar` + form claro. Lógica Clerk intacta.
+
 ### Oct 2025: Paleta más viva
 Cambio de `oklch(0.52 0.23 27)` a `oklch(0.61 0.24 27)` para coral-rojo más luminoso, más agéntico. Agregada paleta ámbar para variedad visual.
 

@@ -6,6 +6,7 @@
  * Insert con ON CONFLICT (nombre) DO NOTHING — re-correr no duplica ni pisa ediciones.
  */
 import { seedTarjetasMaestras } from "@/lib/tarjetas/catalog"
+import { seedBancos } from "@/lib/bancos/configs"
 import { db } from "@/lib/db"
 import { tarjetasMaestras } from "@/lib/db/schema"
 
@@ -15,6 +16,9 @@ async function main() {
   await seedTarjetasMaestras()
   const rows = await db.select().from(tarjetasMaestras)
   console.log(`✓ tarjetas_maestras en Supabase: ${rows.length}`)
+
+  const bancosNuevos = await seedBancos()
+  console.log(`✓ bancos sembrados (filas nuevas): ${bancosNuevos}`)
   process.exit(0)
 }
 

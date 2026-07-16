@@ -7,6 +7,7 @@ import { ArrowLeftRight, ShoppingCart, Truck, BookOpen, LayoutDashboard, Bot, Ch
 import { UserButton, OrganizationSwitcher } from "@clerk/nextjs"
 import { useAgentActivity } from "@/lib/context/agent-activity-context"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { cn } from "@/lib/utils"
 
 const modules = [
   { href: "/",             label: "Agente",       icon: Bot },
@@ -58,13 +59,16 @@ export function IconRail() {
               key={mod.href}
               href={mod.href}
               title={expanded ? undefined : mod.label}
-              className="flex items-center gap-3 h-9 rounded-lg px-2.5 transition-all duration-150 whitespace-nowrap overflow-hidden"
+              className={cn(
+                "flex items-center gap-3 h-9 rounded-lg px-2.5 transition-all duration-150 whitespace-nowrap overflow-hidden",
+                isActive && "shadow-glow"
+              )}
               style={{ background: isActive ? "var(--primary)" : "transparent" }}
               onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--sidebar-accent)" }}
               onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent" }}
             >
-              <Icon className="h-4 w-4 shrink-0" style={{ color: isActive ? "var(--primary-foreground)" : "oklch(0.60 0.01 264)" }} />
-              {expanded && <span className="text-sm" style={{ color: isActive ? "var(--primary-foreground)" : "oklch(0.60 0.01 264)" }}>{mod.label}</span>}
+              <Icon className="h-4 w-4 shrink-0" style={{ color: isActive ? "var(--primary-foreground)" : "var(--sidebar-foreground)" }} />
+              {expanded && <span className="text-sm" style={{ color: isActive ? "var(--primary-foreground)" : "var(--sidebar-foreground)" }}>{mod.label}</span>}
             </Link>
           )
         })}
@@ -105,7 +109,11 @@ export function IconRail() {
           {isActive && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />}
           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
         </span>
-        {expanded && <span className="text-[11px] text-muted-foreground whitespace-nowrap">{isActive ? "IA activa" : "IA inactiva"}</span>}
+        {expanded && (
+          <span className={cn("text-[11px] whitespace-nowrap", isActive ? "shimmer" : "text-muted-foreground")} style={isActive ? { color: "var(--sidebar-foreground)" } : undefined}>
+            {isActive ? "IA activa" : "IA inactiva"}
+          </span>
+        )}
         <button
           onClick={() => setExpanded(v => !v)}
           className="ml-auto flex items-center justify-center w-5 h-5 rounded transition-colors hover:bg-sidebar-accent"

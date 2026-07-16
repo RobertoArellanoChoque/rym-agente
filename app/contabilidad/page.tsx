@@ -1,37 +1,19 @@
 "use client"
 
-import { useEffect, useState, Suspense } from "react"
+import { useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
-import { BookOpen, Upload, CheckCircle2, AlertTriangle, X, Loader2 } from "lucide-react"
+import { BookOpen, CheckCircle2, AlertTriangle, X } from "lucide-react"
+import { UploadDropzone } from "@/components/modules/UploadDropzone"
 import { useContabilidad } from "@/lib/context/contabilidad-context"
 
 function fmt(n: number) {
   return `${n < 0 ? "-" : ""}$${(Math.abs(n) / 100).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
 }
 
-function DropZone({ onFile, label, compact }: { onFile: (f: File) => void; label: string; compact?: boolean }) {
-  const [dragging, setDragging] = useState(false)
-  const ref = { current: null as HTMLInputElement | null }
-  return (
-    <div
-      onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".xlsx,.xls"; i.onchange = e => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) onFile(f) }; i.click() }}
-      onDragOver={e => { e.preventDefault(); setDragging(true) }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) onFile(f) }}
-      className={`border-2 border-dashed rounded-lg cursor-pointer transition-colors text-center ${compact ? "p-4" : "p-12"} ${dragging ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30"}`}
-    >
-      <input ref={r => { ref.current = r }} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} />
-      <Upload className={`mx-auto mb-2 text-muted-foreground ${compact ? "h-4 w-4" : "h-7 w-7"}`} />
-      <p className={`font-medium ${compact ? "text-xs" : "text-sm"}`}>{label}</p>
-      <p className="text-[11px] text-muted-foreground mt-0.5">.xlsx / .xls</p>
-    </div>
-  )
-}
-
 function ContabilidadContent() {
   const searchParams = useSearchParams()
   const urlId = searchParams.get("id")
-  const { sesiones, activeId, selectSesion, uploadFile } = useContabilidad()
+  const { sesiones, activeId, selectSesion, uploadFiles } = useContabilidad()
 
   useEffect(() => {
     if (urlId && urlId !== activeId && sesiones[urlId]) selectSesion(urlId)
@@ -72,10 +54,14 @@ function ContabilidadContent() {
 
           {!arca && !tango && (
             <div className="flex-1 flex items-center justify-center">
-              {loading
-                ? <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Identificando archivo…</div>
-                : <div className="w-full max-w-md"><DropZone onFile={f => uploadFile(active.id, f)} label="Arrastrá un archivo de ARCA o Tango" /></div>
-              }
+              <UploadDropzone
+                accept=".xlsx,.xls"
+                multiple
+                title="Arrastrá los archivos"
+                hint="ARCA y/o Tango (.xlsx, .xls)"
+                processing={loading}
+                onUpload={files => uploadFiles(active.id, files)}
+              />
             </div>
           )}
 
@@ -176,11 +162,24 @@ function ContabilidadContent() {
                 </div>
               )}
 
-              {loading
-                ? <div className="flex items-center gap-2 text-sm text-muted-foreground py-2"><Loader2 className="h-4 w-4 animate-spin" /> Identificando archivo…</div>
-                : !tango && <DropZone onFile={f => uploadFile(active.id, f)} label="Ahora subí el exportado de Tango" compact />
-              }
-              {!loading && !arca && <DropZone onFile={f => uploadFile(active.id, f)} label="Ahora subí el exportado de ARCA" compact />}
+              {!tango && (
+                <UploadDropzone
+                  accept=".xlsx,.xls"
+                  title="Ahora subí el exportado de Tango"
+                  hint="Excel (.xlsx, .xls)"
+                  processing={loading}
+                  onUpload={files => uploadFiles(active.id, files)}
+                />
+              )}
+              {!arca && (
+                <UploadDropzone
+                  accept=".xlsx,.xls"
+                  title="Ahora subí el exportado de ARCA"
+                  hint="Excel (.xlsx, .xls)"
+                  processing={loading}
+                  onUpload={files => uploadFiles(active.id, files)}
+                />
+              )}
             </div>
           )}
         </>

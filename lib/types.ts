@@ -79,7 +79,7 @@ export type ResultadoConciliacion = {
 
 // UI: una conciliación en el cliente (puede haber varias a la vez)
 export type ConcStage = "new" | "banco-done" | "tango-done" | "done" | "aprobada"
-export type ConcBusy = null | "banco" | "tango" | "comparar"
+export type ConcBusy = null | "banco" | "tango" | "banco-tango" | "comparar"
 
 export type ConciliacionUI = {
   id: string            // = sessionId

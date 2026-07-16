@@ -31,6 +31,7 @@ type VentasContextValue = {
   deleteSesion: (id: string) => Promise<void>
   renameSesion: (id: string, label: string) => Promise<void>
   uploadFile: (id: string, file: File) => Promise<void>
+  uploadFiles: (files: File[]) => Promise<void>
   guardarManual: (id: string, pago: PagoData) => Promise<void>
 }
 
@@ -132,6 +133,19 @@ export function VentasProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Bulk: 1 comprobante = 1 sesión. El primero usa la activa; el resto crea sesión nueva.
+  async function uploadFiles(files: File[]) {
+    const [first, ...rest] = files
+    if (!first) return
+    const firstId = activeId ?? (await nuevaSesion())
+    if (!firstId) return
+    await uploadFile(firstId, first)
+    for (const file of rest) {
+      const id = await nuevaSesion()
+      if (id) await uploadFile(id, file)
+    }
+  }
+
   useEffect(() => {
     fetch("/api/sesiones?modulo=ventas")
       .then(r => r.json())
@@ -157,7 +171,7 @@ export function VentasProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   return (
-    <Ctx.Provider value={{ sesiones, activeId, selectSesion, nuevaSesion, deleteSesion, renameSesion, uploadFile, guardarManual }}>
+    <Ctx.Provider value={{ sesiones, activeId, selectSesion, nuevaSesion, deleteSesion, renameSesion, uploadFile, uploadFiles, guardarManual }}>
       {children}
     </Ctx.Provider>
   )

@@ -11,6 +11,8 @@ const TIMINGS_PDF = [800, 7000, 11000, 18000]
 const TIMINGS_EXCEL = [300, 800, 1500]
 const TANGO_STEPS = ["Subiendo archivo", "Detectando formato y columnas", "Procesando asientos"]
 const TANGO_TIMINGS = [500, 1500]
+const BANCO_TANGO_STEPS = ["Subiendo archivos", "Detectando tipo de cada archivo", "Procesando extracto y mayor", "Guardando resultados"]
+const BANCO_TANGO_TIMINGS = [500, 2000, 6000]
 const COMPARE_STEPS = ["Leyendo movimientos del banco", "Leyendo asientos de Tango", "Ejecutando algoritmo de matching", "Calculando discrepancias"]
 const COMPARE_TIMINGS = [300, 700, 1500]
 
@@ -19,6 +21,11 @@ type ListItem = {
   bankId?: string; bankName?: string; confidence?: "high" | "low"
   saldoAnterior?: number; saldoFinal?: number
 }
+
+// Respuesta del batch de /api/conciliacion/ingest-batch (misma forma que consume ChatInterface).
+export type BatchSesion = { label?: string; banco: boolean; tango: boolean; diferencia?: number }
+export type BatchError = { file: string; error: string }
+export type BatchResult = { sesiones: BatchSesion[]; errores: BatchError[] }
 
 export type ConciliacionContextValue = {
   conciliaciones: Record<string, ConciliacionUI>
@@ -33,7 +40,9 @@ export type ConciliacionContextValue = {
   renameConciliacion: (id: string, label: string) => Promise<void>
   deleteConciliacion: (id: string) => Promise<void>
   uploadBanco: (id: string, file: File) => Promise<void>
+  uploadBatch: (files: File[]) => Promise<BatchResult | null>
   uploadTango: (id: string, file: File) => Promise<void>
+  uploadBancoYTango: (id: string, files: File[]) => Promise<void>
   comparar: (id: string) => Promise<void>
   savePartidas: (bankId: string, items: Partida[]) => Promise<void>
   back: (id: string) => void
@@ -240,6 +249,61 @@ export function ConciliacionProvider({ children }: { children: React.ReactNode }
     }
   }
 
+  // Batch: /api/conciliacion/ingest-batch clasifica y agrupa server-side; no se ata a una conc.
+  async function uploadBatch(files: File[]): Promise<BatchResult | null> {
+    setSessionError(null)
+    const form = new FormData()
+    files.forEach((f) => form.append("files", f))
+    try {
+      const res = await fetch("/api/conciliacion/ingest-batch", { method: "POST", body: form })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setSessionError(data.error ?? "No se pudieron procesar los archivos")
+        return null
+      }
+      await loadList()
+      fetchSaldos()
+      window.dispatchEvent(new Event("tasks-refresh"))
+      return { sesiones: data.sesiones ?? [], errores: data.errores ?? [] }
+    } catch {
+      setSessionError("Error de red al procesar los archivos")
+      return null
+    }
+  }
+
+  async function uploadBancoYTango(id: string, files: File[]) {
+    patchConc(id, { busy: "banco-tango", error: null, stepLabels: BANCO_TANGO_STEPS })
+    startSteps(id, BANCO_TANGO_TIMINGS)
+
+    const ac = new AbortController()
+    aborters.current[id] = ac
+    const form = new FormData()
+    files.forEach(f => form.append("files", f))
+    form.append("sessionId", id)
+
+    try {
+      const res = await fetch("/api/conciliacion/banco-y-tango", { method: "POST", body: form, signal: ac.signal })
+      const data = await res.json()
+      clearSteps(id)
+      if (!res.ok) {
+        patchConc(id, { busy: null, stepIndex: -1, error: data.error ?? "Error procesando los archivos" })
+        return
+      }
+      patchConc(id, {
+        busy: null, stepIndex: -1, stage: "tango-done", bank: data.bank,
+        movimientos: data.movimientos, saldoAnterior: data.saldoAnterior,
+        saldoFinal: data.saldoFinal, asientos: data.asientos,
+        wantsTango: false, error: null,
+        ...(data.label && { label: data.label }),
+      })
+      fetchSaldos()
+    } catch (e) {
+      clearSteps(id)
+      if ((e as Error).name === "AbortError") return
+      patchConc(id, { busy: null, stepIndex: -1, error: "Error de red. Verificá tu conexión." })
+    }
+  }
+
   async function uploadTango(id: string, file: File) {
     patchConc(id, { busy: "tango", error: null, stepLabels: TANGO_STEPS })
     startSteps(id, TANGO_TIMINGS)
@@ -333,13 +397,11 @@ export function ConciliacionProvider({ children }: { children: React.ReactNode }
     })
   }
 
-  // Mount: load list + saldos
-  useEffect(() => {
-    fetchSaldos()
+  function loadList() {
     // Si la URL ya trae ?id=, respetarlo en vez de activar siempre items[0] —
     // evita un fetch de state desperdiciado + flash de la conciliación equivocada.
     const urlId = new URLSearchParams(window.location.search).get("id")
-    fetch("/api/conciliacion/list")
+    return fetch("/api/conciliacion/list")
       .then((r) => r.json())
       .then((items: ListItem[]) => {
         if (!Array.isArray(items)) return
@@ -359,6 +421,12 @@ export function ConciliacionProvider({ children }: { children: React.ReactNode }
         else nuevaConciliacion()
       })
       .catch(() => nuevaConciliacion())
+  }
+
+  // Mount: load list + saldos
+  useEffect(() => {
+    fetchSaldos()
+    loadList()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -375,8 +443,8 @@ export function ConciliacionProvider({ children }: { children: React.ReactNode }
     <Ctx.Provider value={{
       conciliaciones, activeId, saldos, partidas, sessionError,
       setActiveId, patchConc, selectConciliacion, nuevaConciliacion,
-      renameConciliacion, deleteConciliacion, uploadBanco, uploadTango,
-      comparar, savePartidas, back,
+      renameConciliacion, deleteConciliacion, uploadBanco, uploadBatch, uploadTango,
+      uploadBancoYTango, comparar, savePartidas, back,
     }}>
       {children}
     </Ctx.Provider>

@@ -11,7 +11,13 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
-  serverExternalPackages: ["exceljs", "unpdf", "@mistralai/mistralai", "googleapis"],
+  serverExternalPackages: ["exceljs", "unpdf", "@mistralai/mistralai"],
+  experimental: {
+    // El proxy buffea el body con cap default de 10MB y lo TRUNCA en silencio —
+    // rompe multipart en /api/ingest/bulk y /api/conciliacion/ingest-batch (lotes
+    // de hasta 100MB, ver MAX_BATCH_BYTES en esas rutas).
+    proxyClientMaxBodySize: "100mb",
+  },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }]
   },

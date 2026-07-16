@@ -51,15 +51,15 @@ type Activity = {
 // ── Config ───────────────────────────────────────────────────────────────────
 
 const STAGE_CONFIG: Record<string, { label: string; color: string }> = {
-  "new":        { label: "Nuevo",               color: "border-l-slate-400" },
-  "banco-done": { label: "Banco cargado",       color: "border-l-blue-400" },
-  "tango-done": { label: "Listo para comparar", color: "border-l-amber-400" },
-  "done":       { label: "Completado",          color: "border-l-emerald-400" },
-  "aprobada":   { label: "Aprobada",            color: "border-l-emerald-600" },
+  "new":        { label: "Nuevo",               color: "border-l-muted-foreground/50" },
+  "banco-done": { label: "Banco cargado",       color: "border-l-(--chart-4)" },
+  "tango-done": { label: "Listo para comparar", color: "border-l-(--accent-secondary)" },
+  "done":       { label: "Completado",          color: "border-l-success" },
+  "aprobada":   { label: "Aprobada",            color: "border-l-success" },
 }
 const SESION_CONFIG: Record<string, { label: string; color: string }> = {
-  "activo":     { label: "En progreso", color: "border-l-blue-400" },
-  "completado": { label: "Completado",  color: "border-l-emerald-400" },
+  "activo":     { label: "En progreso", color: "border-l-(--chart-4)" },
+  "completado": { label: "Completado",  color: "border-l-success" },
   "error":      { label: "Error",       color: "border-l-destructive" },
 }
 
@@ -108,7 +108,7 @@ export function TasksPanel() {
   const { activeId: activeConcId, nuevaConciliacion, deleteConciliacion, renameConciliacion } = useConciliacion()
   const { activeId: activeVentasId, nuevaSesion: nuevaVenta, deleteSesion: deleteVenta, renameSesion: renameVenta } = useVentas()
   const { activeId: activeContabId, nuevaSesion: nuevaContab, deleteSesion: deleteContab, renameSesion: renameContab } = useContabilidad()
-  const { setHasActiveTasks } = useAgentActivity()
+  const { isActive: agentActive, setHasActiveTasks } = useAgentActivity()
 
   const [data, setData] = useState<TasksData | null>(null)
   const [approving, setApproving] = useState<string | null>(null)
@@ -269,7 +269,7 @@ export function TasksPanel() {
     // ponytail: tarjetas sin estado in-progress todavía — filtrar cuando se defina el flujo completo
     ...data.tarjetas.map((t): Activity => ({
       id: t.id, kind: "tarjeta", label: t.nombreTarjeta, sublabel: t.periodo || undefined,
-      icon: CreditCard, borderColor: "border-l-violet-400", badge: "",
+      icon: CreditCard, borderColor: "border-l-(--chart-5)", badge: "",
       ts: t.creadoEn, href: "/proveedores", monto: t.totalMonto, isActive: false,
     })),
     // Solo en progreso: ocultar sesiones completadas (deja activo/error)
@@ -316,7 +316,9 @@ export function TasksPanel() {
     <aside className="w-80 shrink-0 h-screen flex flex-col border-l" style={{ borderColor: "var(--border)" }}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b shrink-0" style={{ borderColor: "var(--border)" }}>
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tareas activas</span>
+        <span className={cn("text-xs font-semibold uppercase tracking-wider text-muted-foreground", agentActive && "shimmer")}>
+          {agentActive ? "Trabajando…" : "Tareas activas"}
+        </span>
         <div className="flex items-center gap-2">
           {total > 0 && (
             <span className="text-xs font-medium text-muted-foreground bg-muted rounded-full px-1.5 py-0.5">{total}</span>
@@ -360,7 +362,7 @@ export function TasksPanel() {
         {alertas.length > 0 && (
           <div className="border-b" style={{ borderColor: "var(--border)" }}>
             <div className="flex items-center gap-1.5 px-4 py-2">
-              <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+              <AlertTriangle className="h-3.5 w-3.5 text-(--accent-secondary)" />
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Alertas</span>
               <span className="text-xs font-medium text-muted-foreground bg-muted rounded-full px-1.5 py-0.5">{alertas.length}</span>
             </div>
@@ -371,11 +373,11 @@ export function TasksPanel() {
                   key={a.id}
                   className={cn(
                     "flex items-start gap-2 px-4 py-2.5 border-b border-l-2",
-                    isError ? "border-l-destructive" : "border-l-amber-400",
+                    isError ? "border-l-destructive" : "border-l-(--accent-secondary)",
                   )}
                   style={{ borderBottomColor: "var(--border)" }}
                 >
-                  <AlertTriangle className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", isError ? "text-destructive" : "text-amber-500")} />
+                  <AlertTriangle className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", isError ? "text-destructive" : "text-(--accent-secondary)")} />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold truncate">{a.titulo}</p>
                     <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{a.detalle}</p>
@@ -481,7 +483,7 @@ export function TasksPanel() {
                 <div className="flex items-center justify-between mt-1.5">
                   <span className="text-[10px] text-muted-foreground">{a.badge}</span>
                   {a.diferencia != null && (
-                    <span className={cn("text-[10px] font-medium", a.diferencia === 0 ? "text-emerald-600" : "text-orange-600")}>
+                    <span className={cn("text-[10px] font-medium", a.diferencia === 0 ? "text-success" : "text-(--accent-secondary)")}>
                       {a.diferencia === 0 ? "Sin diferencia" : fmtMonto(a.diferencia)}
                     </span>
                   )}

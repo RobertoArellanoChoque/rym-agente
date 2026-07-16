@@ -78,13 +78,40 @@ export default function SignInPage() {
   }
 
   return (
-    <section className="bg-muted h-screen">
-      <div className="flex h-full items-center justify-center">
-        <div className="border-muted bg-background flex w-full max-w-sm flex-col items-center gap-y-8 rounded-md border px-6 py-12 shadow-md">
+    <section className="grid min-h-screen lg:grid-cols-2">
+      {/* Panel marca (solo desktop) */}
+      <div className="relative hidden flex-col justify-between overflow-hidden lg:flex" style={{ background: "var(--sidebar)" }}>
+        <div className="h-1 w-full shrink-0" style={{ background: "linear-gradient(90deg, var(--primary) 0%, rgb(from var(--primary) r g b / 0.3) 70%, transparent 100%)" }} />
+        <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_bottom_left,color-mix(in_oklch,var(--primary)_14%,transparent),transparent_55%)]" />
+        <div className="relative flex flex-1 flex-col items-start justify-center gap-6 px-14">
+          <RymLogo className="h-12 w-auto animate-in fade-in duration-700 fill-mode-backwards" textColor="var(--sidebar-accent-foreground)" />
+          <p
+            className="text-2xl font-bold tracking-tight animate-in fade-in slide-in-from-bottom-2 duration-700 delay-150 fill-mode-backwards"
+            style={{ fontFamily: "var(--font-cabinet-grotesk)", color: "var(--sidebar-accent-foreground)" }}
+          >
+            Tu agente financiero
+            <br />
+            está listo.
+          </p>
+          <div className="flex items-center gap-2 animate-in fade-in duration-700 delay-300 fill-mode-backwards">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+            </span>
+            <span className="shimmer text-sm" style={{ color: "var(--sidebar-foreground)" }}>
+              Conciliaciones, saldos y retenciones en tiempo real
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Panel form */}
+      <div className="flex items-center justify-center px-6 py-12 bg-background bg-[radial-gradient(ellipse_at_top,color-mix(in_oklch,var(--primary)_5%,transparent),transparent_55%)]">
+        <div className="flex w-full max-w-sm flex-col items-center gap-y-8">
           <div className="flex flex-col items-center gap-y-3">
-            <RymLogo className="h-10 w-auto" />
+            <RymLogo className="h-10 w-auto animate-in fade-in duration-500 fill-mode-backwards lg:hidden" />
             <h1
-              className="text-3xl font-semibold tracking-tight"
+              className="text-3xl font-semibold tracking-tight animate-in fade-in slide-in-from-bottom-2 duration-500 delay-100 fill-mode-backwards"
               style={{ fontFamily: "var(--font-cabinet-grotesk)" }}
             >
               {mode === "signin" ? "Iniciá sesión" : "Recuperar acceso"}

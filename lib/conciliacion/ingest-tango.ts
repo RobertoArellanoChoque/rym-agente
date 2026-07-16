@@ -39,9 +39,9 @@ export async function extraerTango(buffer: ArrayBuffer, filename: string): Promi
   return { asientos, saldoMayor, periodo }
 }
 
-/** Persiste un mayor extraído en una sesión existente. */
-export async function persistTango(sessionId: string, mayor: MayorTango): Promise<void> {
-  const orgId = await requireOrgId()
+/** Persiste un mayor extraído en una sesión existente. orgId explícito para callers sin sesión Clerk (ingesta server-to-server). */
+export async function persistTango(sessionId: string, mayor: MayorTango, orgIdExplicito?: string): Promise<void> {
+  const orgId = orgIdExplicito ?? await requireOrgId()
   // Defensivo: mismo chequeo que persistBanco — no pisar una sesión de otra org.
   const [existing] = await db.select({ orgId: conciliaciones.orgId }).from(conciliaciones)
     .where(eq(conciliaciones.id, sessionId)).limit(1)

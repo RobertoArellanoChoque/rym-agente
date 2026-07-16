@@ -119,7 +119,7 @@ export async function POST(req: NextRequest) {
       classifyText_input = await extractRawText(buffer, file.name)
     }
 
-    const classification = classifyText(classifyText_input)
+    const classification = await classifyText(classifyText_input)
 
     let result: OrchestratorResult
 

@@ -6,7 +6,7 @@ import { rateLimit, ipOf } from "@/lib/rate-limit"
 import { requireOrgId } from "@/lib/auth/current-user"
 
 export async function POST(req: NextRequest) {
-  if (!(await rateLimit(`upload:${ipOf(req)}`, 10, 60_000)))
+  if (!(await rateLimit(`upload:${ipOf(req)}`, 30, 60_000)))
     return NextResponse.json({ error: "Demasiadas solicitudes, esperá un momento" }, { status: 429 })
   try {
     const orgId = await requireOrgId()

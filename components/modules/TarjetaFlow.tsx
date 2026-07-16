@@ -1,9 +1,10 @@
 "use client"
 
 import { useState } from "react"
+import { toast } from "sonner"
 import { CreditCard, CheckCircle2, AlertTriangle, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { TarjetaUpload } from "@/components/modules/TarjetaUpload"
+import { UploadDropzone } from "@/components/modules/UploadDropzone"
 
 interface LineaPreview {
   cuenta: string
@@ -63,76 +64,147 @@ function MiniTable({ lineas, emptyText }: { lineas: LineaPreview[]; emptyText: s
   )
 }
 
+function PreviewCard({ p }: { p: PreviewData }) {
+  return (
+    <div className="space-y-4">
+      {/* Card detected */}
+      <div className="rounded-lg border p-4 space-y-1">
+        <p className="text-xs text-muted-foreground">Tarjeta detectada</p>
+        {p.tarjetaDetectada ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold">{p.tarjetaDetectada.nombre}</span>
+            <TipoBadge tipo={p.tarjetaDetectada.tipo} />
+            <span className="text-xs text-muted-foreground">BCO {p.tarjetaDetectada.banco}</span>
+            {p.confidence >= 0.7 && (
+              <span className="flex items-center gap-1 text-[11px] text-emerald-600">
+                <CheckCircle2 className="h-3 w-3" /> Alta confianza
+              </span>
+            )}
+            {p.confidence < 0.7 && p.confidence > 0 && (
+              <span className="flex items-center gap-1 text-[11px] text-amber-600">
+                <AlertTriangle className="h-3 w-3" /> Confianza media — verificar
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-amber-600 text-sm">
+            <AlertTriangle className="h-4 w-4" />
+            <span>No se identificó la tarjeta. Se guardará como &quot;{p.nombreTarjeta}&quot;</span>
+          </div>
+        )}
+        {p.periodo && (
+          <p className="text-xs text-muted-foreground">Período: {p.periodo}</p>
+        )}
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-lg border border-orange-200 bg-orange-50 p-3">
+          <p className="text-xs text-orange-700">Impuestos</p>
+          <p className="text-lg font-bold text-orange-800 mt-0.5">{fmt(p.totalImpuestos)}</p>
+          <p className="text-xs text-orange-600">{p.impuestos.length} líneas</p>
+        </div>
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+          <p className="text-xs text-emerald-700">Devoluciones impositivas</p>
+          <p className="text-lg font-bold text-emerald-800 mt-0.5">{fmt(p.totalDevoluciones)}</p>
+          <p className="text-xs text-emerald-600">{p.devoluciones.length} líneas</p>
+        </div>
+      </div>
+
+      {/* Detail tables */}
+      {p.impuestos.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-orange-700 mb-1.5 flex items-center gap-1">
+            <ChevronRight className="h-3 w-3" /> Impuestos detectados
+          </p>
+          <MiniTable lineas={p.impuestos} emptyText="" />
+        </div>
+      )}
+      {p.devoluciones.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 mb-1.5 flex items-center gap-1">
+            <ChevronRight className="h-3 w-3" /> Devoluciones impositivas
+          </p>
+          <MiniTable lineas={p.devoluciones} emptyText="" />
+        </div>
+      )}
+
+      {p.impuestos.length === 0 && p.devoluciones.length === 0 && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground rounded-lg border p-4">
+          <CreditCard className="h-4 w-4" />
+          <span>No se detectaron impuestos en este extracto.</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Flujo de resumen de tarjeta (upload → preview → import). Reusado por la página
 // /proveedores y por el modal "nueva tarjeta" del TasksPanel.
 export function TarjetaFlow({ onImported }: { onImported?: () => void }) {
   const [mode, setMode] = useState<"upload" | "preview">("upload")
   const [processing, setProcessing] = useState(false)
-  const [stepIndex, setStepIndex] = useState(0)
+  const [progress, setProgress] = useState<{ done: number; total: number; current?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [preview, setPreview] = useState<PreviewData | null>(null)
+  const [previews, setPreviews] = useState<Array<{ file: string; data?: PreviewData; error?: string }>>([])
   const [importing, setImporting] = useState(false)
 
-  async function handleUpload(file: File) {
+  async function handleUpload(files: File[]) {
     setProcessing(true)
     setError(null)
-    setStepIndex(0)
-
-    const timer0 = setTimeout(() => setStepIndex(1), 800)
-    const timer1 = setTimeout(() => setStepIndex(2), 4000)
-    const timer2 = setTimeout(() => setStepIndex(3), 10000)
-
-    try {
-      const form = new FormData()
-      form.append("file", file)
-      const res = await fetch("/api/proveedores/tarjeta/preview", { method: "POST", body: form })
-      const data = await res.json()
-
-      if (!res.ok) {
-        setError(data.error ?? "Error al analizar el resumen")
-        return
+    const results: Array<{ file: string; data?: PreviewData; error?: string }> = []
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i]
+      setProgress({ done: i + 1, total: files.length, current: f.name })
+      try {
+        const form = new FormData()
+        form.append("file", f)
+        const res = await fetch("/api/proveedores/tarjeta/preview", { method: "POST", body: form })
+        const data = await res.json()
+        if (!res.ok) results.push({ file: f.name, error: data.error ?? "Error al analizar el resumen" })
+        else results.push({ file: f.name, data: data as PreviewData })
+      } catch {
+        results.push({ file: f.name, error: "Error de red al procesar el resumen" })
       }
-
-      setPreview(data as PreviewData)
-      setMode("preview")
-    } catch {
-      setError("Error de red al procesar el resumen")
-    } finally {
-      clearTimeout(timer0)
-      clearTimeout(timer1)
-      clearTimeout(timer2)
-      setProcessing(false)
-      setStepIndex(0)
     }
+    setProgress(null)
+    setProcessing(false)
+    setPreviews(results)
+    setMode("preview")
   }
 
-  async function handleImportar() {
-    if (!preview) return
+  const conData = previews.filter((p) => p.data)
+
+  async function handleImportarTodo() {
+    if (!conData.length) return
     setImporting(true)
-    try {
-      const res = await fetch("/api/proveedores/tarjeta", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nombreTarjeta: preview.tarjetaDetectada?.nombre ?? preview.nombreTarjeta,
-          periodo: preview.periodo,
-          tarjetaMaestraId: preview.tarjetaDetectada?.id,
-          rawLineas: preview.rawLineas,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error ?? "Error al importar")
-        return
+    setError(null)
+    const errs: Array<{ file: string; error: string }> = []
+    for (const p of conData) {
+      const preview = p.data!
+      try {
+        const res = await fetch("/api/proveedores/tarjeta", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          // ponytail: parametrizar ubicación de impuestos por banco+tarjeta (columna en tarjetas_maestras + override del prompt del extractor) es diferible; el prompt genérico cubre hoy.
+          body: JSON.stringify({
+            nombreTarjeta: preview.tarjetaDetectada?.nombre ?? preview.nombreTarjeta,
+            periodo: preview.periodo,
+            tarjetaMaestraId: preview.tarjetaDetectada?.id,
+            rawLineas: preview.rawLineas,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) errs.push({ file: p.file, error: data.error ?? "Error al importar" })
+      } catch {
+        errs.push({ file: p.file, error: "Error de red al importar" })
       }
-      setPreview(null)
-      setMode("upload")
-      onImported?.()
-    } catch {
-      setError("Error de red al importar")
-    } finally {
-      setImporting(false)
     }
+    setImporting(false)
+    if (errs.length) toast.error(`No se importaron ${errs.length}: ${errs.map((e) => e.file).join(", ")}`)
+    setPreviews([])
+    setMode("upload")
+    onImported?.()
   }
 
   if (mode === "upload") {
@@ -144,9 +216,14 @@ export function TarjetaFlow({ onImported }: { onImported?: () => void }) {
             Subí el resumen (PDF, Excel o CSV) para extraer los impuestos (IVA, IIBB, percepciones, retenciones).
           </p>
         </div>
-        <TarjetaUpload
+        <UploadDropzone
+          accept=".pdf,.xlsx,.xls,.csv"
+          multiple
+          title="Arrastrá resúmenes de tarjeta"
+          hint="PDF, Excel o CSV — podés subir varios"
+          buttonLabel="Analizar"
           processing={processing}
-          stepIndex={stepIndex}
+          progress={progress ?? undefined}
           error={error}
           onUpload={handleUpload}
         />
@@ -155,96 +232,39 @@ export function TarjetaFlow({ onImported }: { onImported?: () => void }) {
   }
 
   return (
-    preview && (
-      <div className="space-y-5">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-bold">Vista previa — Impuestos detectados</h1>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => { setMode("upload"); setPreview(null); setError(null) }}>
-              Cancelar
-            </Button>
-            <Button size="sm" onClick={handleImportar} disabled={importing}>
-              {importing ? "Importando…" : "Importar"}
-            </Button>
-          </div>
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-bold">Vista previa — Impuestos detectados</h1>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => { setMode("upload"); setPreviews([]); setError(null) }}>
+            Cancelar
+          </Button>
+          <Button size="sm" onClick={handleImportarTodo} disabled={importing || !conData.length}>
+            {importing ? "Importando…" : `Importar todo (${conData.length})`}
+          </Button>
         </div>
-
-        {/* Card detected */}
-        <div className="rounded-lg border p-4 space-y-1">
-          <p className="text-xs text-muted-foreground">Tarjeta detectada</p>
-          {preview.tarjetaDetectada ? (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold">{preview.tarjetaDetectada.nombre}</span>
-              <TipoBadge tipo={preview.tarjetaDetectada.tipo} />
-              <span className="text-xs text-muted-foreground">BCO {preview.tarjetaDetectada.banco}</span>
-              {preview.confidence >= 0.7 && (
-                <span className="flex items-center gap-1 text-[11px] text-emerald-600">
-                  <CheckCircle2 className="h-3 w-3" /> Alta confianza
-                </span>
-              )}
-              {preview.confidence < 0.7 && preview.confidence > 0 && (
-                <span className="flex items-center gap-1 text-[11px] text-amber-600">
-                  <AlertTriangle className="h-3 w-3" /> Confianza media — verificar
-                </span>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-amber-600 text-sm">
-              <AlertTriangle className="h-4 w-4" />
-              <span>No se identificó la tarjeta. Se guardará como &quot;{preview.nombreTarjeta}&quot;</span>
-            </div>
-          )}
-          {preview.periodo && (
-            <p className="text-xs text-muted-foreground">Período: {preview.periodo}</p>
-          )}
-        </div>
-
-        {/* Summary cards */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-lg border border-orange-200 bg-orange-50 p-3">
-            <p className="text-xs text-orange-700">Impuestos</p>
-            <p className="text-lg font-bold text-orange-800 mt-0.5">{fmt(preview.totalImpuestos)}</p>
-            <p className="text-xs text-orange-600">{preview.impuestos.length} líneas</p>
-          </div>
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-            <p className="text-xs text-emerald-700">Devoluciones impositivas</p>
-            <p className="text-lg font-bold text-emerald-800 mt-0.5">{fmt(preview.totalDevoluciones)}</p>
-            <p className="text-xs text-emerald-600">{preview.devoluciones.length} líneas</p>
-          </div>
-        </div>
-
-        {/* Detail tables */}
-        {preview.impuestos.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-orange-700 mb-1.5 flex items-center gap-1">
-              <ChevronRight className="h-3 w-3" /> Impuestos detectados
-            </p>
-            <MiniTable lineas={preview.impuestos} emptyText="" />
-          </div>
-        )}
-        {preview.devoluciones.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 mb-1.5 flex items-center gap-1">
-              <ChevronRight className="h-3 w-3" /> Devoluciones impositivas
-            </p>
-            <MiniTable lineas={preview.devoluciones} emptyText="" />
-          </div>
-        )}
-
-        {preview.impuestos.length === 0 && preview.devoluciones.length === 0 && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground rounded-lg border p-4">
-            <CreditCard className="h-4 w-4" />
-            <span>No se detectaron impuestos en este extracto.</span>
-          </div>
-        )}
-
-        {error && (
-          <div className="flex items-center gap-2 text-sm text-destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <span>{error}</span>
-          </div>
-        )}
       </div>
-    )
+
+      {previews.map((p, i) =>
+        p.data ? (
+          <div key={i} className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground truncate">{p.file}</p>
+            <PreviewCard p={p.data} />
+          </div>
+        ) : (
+          <div key={i} className="flex items-center gap-2 text-sm text-destructive rounded-lg border border-destructive/20 bg-destructive/5 p-3">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span><span className="font-medium">{p.file}</span> — {p.error}</span>
+          </div>
+        )
+      )}
+
+      {error && (
+        <div className="flex items-center gap-2 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <span>{error}</span>
+        </div>
+      )}
+    </div>
   )
 }

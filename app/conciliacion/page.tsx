@@ -1,15 +1,15 @@
 "use client"
 
-import { useEffect, Suspense } from "react"
+import { useEffect, Suspense, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { ArrowLeftRight, ArrowLeft, CheckCircle2 } from "lucide-react"
+import { ArrowLeftRight, ArrowLeft, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { StepIndicator } from "@/components/modules/StepIndicator"
-import { BancoUpload } from "@/components/modules/BancoUpload"
-import { TangoUpload } from "@/components/modules/TangoUpload"
+import { UploadDropzone } from "@/components/modules/UploadDropzone"
 import { MovimientosPreview } from "@/components/modules/MovimientosPreview"
 import { AsientosPreview } from "@/components/modules/AsientosPreview"
+import { ComparativaPreview } from "@/components/modules/ComparativaPreview"
 import { PartidasEditor } from "@/components/modules/PartidasEditor"
 import { ResultTable } from "@/components/modules/ResultTable"
 import { DiferidosPanel } from "@/components/modules/DiferidosPanel"
@@ -24,8 +24,11 @@ function ConciliacionContent() {
 
   const {
     conciliaciones, activeId, saldos, partidas, sessionError,
-    selectConciliacion, patchConc, uploadBanco, uploadTango, comparar, savePartidas, back,
+    selectConciliacion, patchConc, uploadBanco, uploadBatch, uploadBancoYTango, uploadTango, comparar, savePartidas, back,
   } = useConciliacion()
+
+  const [batchBusy, setBatchBusy] = useState(false)
+  const [batchResumen, setBatchResumen] = useState<string | null>(null)
 
   // Sync URL param → active conciliation
   useEffect(() => {
@@ -36,6 +39,24 @@ function ConciliacionContent() {
   }, [urlId])
 
   const active = activeId ? conciliaciones[activeId] : null
+
+  // 1 archivo → flujo de preview de a 1; 2 → banco+tango juntos en esta misma conciliación;
+  // 3+ → batch (agrupa por banco+período server-side, sesiones propias).
+  async function handleBancoUpload(files: File[]) {
+    if (!active) return
+    setBatchResumen(null)
+    if (files.length === 1) { uploadBanco(active.id, files[0]); return }
+    if (files.length === 2) { uploadBancoYTango(active.id, files); return }
+    setBatchBusy(true)
+    const result = await uploadBatch(files)
+    setBatchBusy(false)
+    if (!result) return
+    const fmtDif = (c?: number) => c == null ? "" : ` — dif $${(Math.abs(c) / 100).toLocaleString("es-AR")}${c === 0 ? " (cuadra)" : ""}`
+    const lines = result.sesiones.map((s) =>
+      `• ${s.label ?? "Conciliación"}${s.banco && s.tango ? fmtDif(s.diferencia) : s.banco ? " — solo banco (falta mayor)" : " — solo mayor (falta extracto)"}`)
+    const errs = result.errores.map((e) => `Error — ${e.file}: ${e.error}`)
+    setBatchResumen(`Listo. ${result.sesiones.length} conciliación(es):\n${lines.join("\n")}${errs.length ? `\n\n${errs.join("\n")}` : ""}`)
+  }
   // Período del extracto recién cargado (misma lógica que el backend: moda de las fechas).
   const periodo = active && active.movimientos.length > 0
     ? periodoDeFechas(active.movimientos.map(m => m.fecha))
@@ -82,6 +103,18 @@ function ConciliacionContent() {
           </div>
           <Separator className="mb-6" />
 
+          {batchResumen && (
+            <div className="relative mb-6 rounded-lg border bg-muted/20 p-4 pr-9 text-sm whitespace-pre-wrap max-w-md">
+              <button
+                onClick={() => setBatchResumen(null)}
+                className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              {batchResumen}
+            </div>
+          )}
+
           {active.stage === "new" && (
             active.movimientos.length > 0 && active.bank && !active.wantsBancoChange ? (
               <div className="space-y-6 max-w-2xl">
@@ -104,24 +137,34 @@ function ConciliacionContent() {
                 </div>
               </div>
             ) : (
-              <BancoUpload
-                processing={active.busy === "banco"}
+              <UploadDropzone
+                accept=".pdf,.xlsx,.xls,.csv"
+                multiple
+                title="Arrastrá extractos bancarios"
+                hint="PDF o Excel — subí el extracto y el mayor de Tango juntos, o varios extractos a la vez"
+                buttonLabel="Procesar"
+                processing={active.busy === "banco" || active.busy === "banco-tango" || batchBusy}
                 stepIndex={active.stepIndex}
-                stepLabels={active.stepLabels}
+                stepLabels={batchBusy ? undefined : active.stepLabels}
                 error={active.error}
-                onUpload={(file) => uploadBanco(active.id, file)}
+                onUpload={handleBancoUpload}
               />
             )
           )}
 
           {active.stage === "banco-done" && (
             active.wantsTango || active.busy === "tango" ? (
-              <TangoUpload
+              <UploadDropzone
+                accept=".xlsx,.xls,.csv"
+                multiple={false}
+                title="Arrastrá el mayor de Tango"
+                hint="Excel (.xlsx, .xls) o CSV"
+                buttonLabel="Cargar mayor de Tango"
                 processing={active.busy === "tango"}
                 stepIndex={active.stepIndex}
                 stepLabels={active.stepLabels}
                 error={active.error}
-                onUpload={(file) => uploadTango(active.id, file)}
+                onUpload={(files) => uploadTango(active.id, files[0])}
               />
             ) : active.asientos.length > 0 && active.bank ? (
               <div className="space-y-6 max-w-2xl">
@@ -171,17 +214,16 @@ function ConciliacionContent() {
           )}
 
           {active.stage === "tango-done" && (
-            <div className="space-y-6 max-w-2xl">
-              <AsientosPreview asientos={active.asientos} />
-              <div className="flex items-center gap-2 p-3 rounded-md bg-emerald-50 border border-emerald-200 text-sm text-emerald-800">
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <div>
-                  <p className="font-medium">Archivos cargados</p>
-                  <p className="text-xs mt-0.5">
-                    {active.movimientos.length} movimientos del banco · {active.asientos.length} asientos de Tango
-                  </p>
-                </div>
-              </div>
+            <div className="space-y-6 max-w-4xl">
+              {active.bank && (
+                <ComparativaPreview
+                  bank={active.bank}
+                  movimientos={active.movimientos}
+                  saldoAnterior={active.saldoAnterior}
+                  saldoFinal={active.saldoFinal}
+                  asientos={active.asientos}
+                />
+              )}
               {active.bank && (
                 <PartidasEditor
                   bankId={active.bank.bankId}

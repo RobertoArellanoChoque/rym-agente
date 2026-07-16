@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "shadcn/tailwind.css";
+@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -38,6 +39,8 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-success: var(--success);
+  --shadow-glow: 0 0 0 1px color-mix(in oklch, var(--primary) 25%, transparent), 0 4px 24px color-mix(in oklch, var(--primary) 12%, transparent);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -49,76 +52,79 @@
 
 :root {
   --font-cabinet-grotesk: 'Cabinet Grotesk', sans-serif;
-  --background: oklch(0.96 0.006 247);      /* #F1F5F9 slate-100 — fondo gris claro */
-  --foreground: oklch(0.15 0.02 264);       /* #0F172A slate-900 */
-  --card: oklch(1 0 0);                     /* #FFFFFF cards blancas sobre fondo gris */
-  --card-foreground: oklch(0.15 0.02 264);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.02 264);
+  /* Neutros cálidos tipo lino — theme "Claude" de 21st.dev (@serafimcloud/themes/claude).
+     La marca RyM (hue 27) se mantiene en primary/ring/sidebar-primary. */
+  --background: #faf9f5;                    /* lino */
+  --foreground: #3d3929;
+  --card: #ffffff;                          /* cards blancas sobre lino (Claude usa card=bg; acá se conserva la jerarquía card>fondo) */
+  --card-foreground: #141413;
+  --popover: #ffffff;
+  --popover-foreground: #28261b;
   --primary: oklch(0.61 0.24 27);           /* coral-rojo vívido RyM, más claro */
   --primary-foreground: oklch(0.985 0 0);
   --accent-secondary: oklch(0.66 0.18 60); /* ámbar cálido, rompe monocromatismo */
-  --secondary: oklch(0.92 0.006 247);       /* #E2E8F0 slate-200 */
-  --secondary-foreground: oklch(0.25 0.02 264);
-  --muted: oklch(0.92 0.006 247);           /* #E2E8F0 slate-200 */
-  --muted-foreground: oklch(0.52 0.02 264); /* #64748B slate-500 */
-  --accent: oklch(0.92 0.006 247);
-  --accent-foreground: oklch(0.15 0.02 264);
-  --destructive: oklch(0.44 0.18 25);       /* #B91C1C */
-  --border: oklch(0.88 0.007 247);          /* #CBD5E1 slate-300 */
-  --input: oklch(0.92 0.006 247);
+  --secondary: #e9e6dc;
+  --secondary-foreground: #535146;
+  --muted: #ede9de;
+  --muted-foreground: #83827d;
+  --accent: #e9e6dc;
+  --accent-foreground: #28261b;
+  --destructive: oklch(0.44 0.18 25);       /* #B91C1C — rojo semántico, no el destructive negro de Claude */
+  --border: #dad9d4;
+  --input: #b4b2a7;
   --ring: oklch(0.52 0.23 27);
+  --success: oklch(0.50 0.15 150);
   --chart-1: oklch(0.52 0.23 27);
   --chart-2: oklch(0.56 0.17 145);
   --chart-3: oklch(0.66 0.18 60);
   --chart-4: oklch(0.47 0.22 264);
   --chart-5: oklch(0.54 0.25 293);          /* violeta — repurposed desde gris genérico (sin uso previo) para dashboard */
-  --radius: 0.5rem;
-  /* Sidebar: slate-800 — gris oscuro (no negro) */
-  --sidebar: oklch(0.24 0.025 264);         /* #1E293B slate-800 */
-  --sidebar-foreground: oklch(0.82 0.01 264); /* #94A3B8 slate-400 */
+  --radius: 0.625rem;
+  /* Sidebar: crema claro estilo Claude, activo en rojo RyM */
+  --sidebar: #f5f4ee;
+  --sidebar-foreground: #3d3d3a;
   --sidebar-primary: oklch(0.52 0.23 27);   /* rojo RyM activo */
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.30 0.025 264);  /* #334155 slate-700 hover */
-  --sidebar-accent-foreground: oklch(0.94 0 0);
-  --sidebar-border: oklch(0.32 0.025 264);  /* #3B4B63 divisores */
+  --sidebar-accent: #e9e6dc;                /* hover */
+  --sidebar-accent-foreground: #343434;
+  --sidebar-border: #dad9d4;                /* mismo border warm que el resto (el #ebebeb de Claude es casi invisible) */
   --sidebar-ring: oklch(0.52 0.23 27);
 }
 
 .dark {
-  /* Slate oscuro con leve tinte frío (hue 264, igual familia que el sidebar),
-     no negro puro — coherente con la decisión de :root de evitar grises fríos genéricos. */
-  --background: oklch(0.17 0.012 264);
-  --foreground: oklch(0.95 0.004 247);
-  --card: oklch(0.22 0.012 264);           /* superficie elevada sobre el fondo */
-  --card-foreground: oklch(0.95 0.004 247);
-  --popover: oklch(0.22 0.012 264);
-  --popover-foreground: oklch(0.95 0.004 247);
+  /* Dark cálido marrón-gris (theme Claude de 21st.dev), no slate frío ni negro puro. */
+  --background: #262624;
+  --foreground: #c3c0b6;
+  --card: #30302e;                         /* superficie elevada sobre el fondo (Claude usa card=bg) */
+  --card-foreground: #faf9f5;
+  --popover: #30302e;
+  --popover-foreground: #e5e5e2;
   --primary: oklch(0.70 0.19 27);          /* mismo hue 27 que :root, más claro para pop sobre fondo oscuro */
   --primary-foreground: oklch(0.16 0.02 27); /* texto oscuro cálido — sobre coral claro da más contraste que blanco */
   --accent-secondary: oklch(0.75 0.16 60); /* mismo hue 60 (ámbar), aclarado */
-  --secondary: oklch(0.26 0.012 264);
-  --secondary-foreground: oklch(0.94 0.006 247);
-  --muted: oklch(0.23 0.012 264);
-  --muted-foreground: oklch(0.66 0.015 264);
-  --accent: oklch(0.26 0.012 264);
-  --accent-foreground: oklch(0.95 0.004 247);
+  --secondary: #3a3a37;                    /* hover/selected distinguible de card #30302e */
+  --secondary-foreground: #e5e5e2;
+  --muted: #1b1b19;
+  --muted-foreground: #b7b5a9;
+  --accent: #32302c;
+  --accent-foreground: #f5f4ee;
   --destructive: oklch(0.70 0.19 25);      /* mismo hue 25 que :root, aclarado para leerse sobre fondo oscuro */
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.66 0.18 27);
+  --success: oklch(0.72 0.15 150);
   --chart-1: oklch(0.68 0.20 27);          /* rojo — mismo hue que :root */
   --chart-2: oklch(0.68 0.16 145);         /* verde — mismo hue que :root */
   --chart-3: oklch(0.75 0.16 60);          /* ámbar — = accent-secondary */
   --chart-4: oklch(0.64 0.17 264);         /* azul-slate — mismo hue que :root */
   --chart-5: oklch(0.68 0.20 293);         /* violeta — mismo hue que :root (ver nota en :root) */
-  --sidebar: oklch(0.15 0.018 264);        /* el rail ya era oscuro en light mode; en dark se profundiza un poco más */
-  --sidebar-foreground: oklch(0.80 0.01 264);
-  --sidebar-primary: oklch(0.68 0.20 27);
+  --sidebar: #1f1e1d;                      /* rail apenas más profundo que el fondo */
+  --sidebar-foreground: #c3c0b6;
+  --sidebar-primary: oklch(0.68 0.20 27);  /* rojo RyM (no el gris #343434 de Claude) */
   --sidebar-primary-foreground: oklch(0.16 0.02 27);
-  --sidebar-accent: oklch(0.23 0.02 264);
-  --sidebar-accent-foreground: oklch(0.95 0.004 247);
-  --sidebar-border: oklch(0.24 0.02 264);
+  --sidebar-accent: #0f0f0e;
+  --sidebar-accent-foreground: #c3c0b6;
+  --sidebar-border: #3e3e38;
   --sidebar-ring: oklch(0.66 0.18 27);
 }
 

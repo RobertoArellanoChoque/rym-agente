@@ -26,11 +26,11 @@ const PAGO_KEYWORDS = [
   "retencion impositiva", "sircreb", "arba", "agip",
 ]
 
-export function classifyText(text: string): FileClassification {
+export async function classifyText(text: string): Promise<FileClassification> {
   const lower = text.toLowerCase()
 
   // 1. Banco — more specific (has institution name)
-  const bankConfig = detectBankByKeyword(text)
+  const bankConfig = await detectBankByKeyword(text)
   if (bankConfig) {
     return {
       type: "banco",

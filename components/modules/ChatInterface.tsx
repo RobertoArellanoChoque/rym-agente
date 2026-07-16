@@ -1,35 +1,15 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback } from "react"
-import {
-  Send, Loader2, Paperclip, X, FileText,
-  CheckCircle2, AlertCircle, ChevronDown, Zap, Trash2,
-} from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Loader2, Paperclip, X, FileText, Trash2, ArrowUp } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { cn } from "@/lib/utils"
-import { useChat, type ChatMessage as Message, type ToolEvent } from "@/lib/context/chat-context"
+import { Message } from "@/components/ai/message"
+import { Suggestions } from "@/components/ai/suggestions"
+import {
+  PromptInput, PromptInputTextarea, PromptInputActions, PromptInputAction,
+} from "@/components/ai/prompt-input"
+import { useChat, type ChatMessage } from "@/lib/context/chat-context"
 import { useAgentActivity } from "@/lib/context/agent-activity-context"
-
-const TOOL_LABELS: Record<string, string> = {
-  ver_estado_general: "Estado general",
-  ejecutar_matching: "Matching",
-  aprobar_conciliacion: "Aprobar conciliación",
-  crear_sesion: "Nueva sesión",
-  explicar_diferencia: "Explicar diferencia",
-  contabilizar_pendientes: "Contabilizar pendientes",
-  listar_discrepancias: "Discrepancias",
-  listar_sesiones: "Listar sesiones",
-  ver_sesion: "Ver sesión",
-  ver_saldos: "Saldos",
-  ver_partidas: "Partidas",
-  ver_tarjeta: "Ver tarjeta",
-  listar_tarjetas: "Listar tarjetas",
-  analizar_tarjeta: "Analizar tarjeta",
-  listar_retenciones: "Listar retenciones",
-  ver_retencion: "Ver retención",
-  resumen_retenciones: "Resumen retenciones",
-}
 
 const CHIPS = [
   "Ver estado general",
@@ -41,39 +21,6 @@ const CHIPS = [
 const DEFAULT_WELCOME =
   "Hola, soy el asistente de RyM. Podés escribirme o arrastrar un archivo (extracto bancario, resumen de tarjeta, comprobante de pago) y lo identifico automáticamente."
 
-function ToolCard({ tool }: { tool: ToolEvent }) {
-  const [expanded, setExpanded] = useState(false)
-  const label = TOOL_LABELS[tool.toolName] ?? tool.toolName
-
-  return (
-    <div className="rounded-md border border-border bg-muted/30 text-xs my-1 overflow-hidden">
-      <button
-        className="flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-muted/50 transition-colors"
-        onClick={() => tool.status !== "running" && setExpanded(v => !v)}
-      >
-        {tool.status === "running" && <Loader2 className="h-3 w-3 animate-spin text-amber-500 shrink-0" />}
-        {tool.status === "done" && <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />}
-        {tool.status === "error" && <AlertCircle className="h-3 w-3 text-destructive shrink-0" />}
-        <Zap className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
-        <span className="font-medium text-muted-foreground">{label}</span>
-        {tool.status === "running" && (
-          <span className="text-amber-600 ml-auto text-[10px]">ejecutando…</span>
-        )}
-        {tool.status !== "running" && (
-          <ChevronDown className={cn("h-3 w-3 ml-auto text-muted-foreground transition-transform", expanded && "rotate-180")} />
-        )}
-      </button>
-      {expanded && tool.result !== undefined && (
-        <div className="px-3 pb-2 border-t border-border bg-muted/20">
-          <pre className="text-[10px] leading-relaxed text-muted-foreground overflow-auto max-h-40 whitespace-pre-wrap mt-1.5">
-            {JSON.stringify(tool.result, null, 2)}
-          </pre>
-        </div>
-      )}
-    </div>
-  )
-}
-
 export function ChatInterface({ welcomeMessage = DEFAULT_WELCOME }: { welcomeMessage?: string }) {
   const { messages, setMessages, clearMessages } = useChat()
   const { setIsStreaming } = useAgentActivity()
@@ -84,20 +31,12 @@ export function ChatInterface({ welcomeMessage = DEFAULT_WELCOME }: { welcomeMes
   const [draggingOver, setDraggingOver] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  function autoResize() {
-    const el = textareaRef.current
-    if (!el) return
-    el.style.height = "auto"
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
-  }
-
-  function addMessage(msg: Omit<Message, "id">) {
+  function addMessage(msg: Omit<ChatMessage, "id">) {
     setMessages(prev => [...prev, { ...msg, id: crypto.randomUUID() }])
   }
 
@@ -269,7 +208,7 @@ export function ChatInterface({ welcomeMessage = DEFAULT_WELCOME }: { welcomeMes
       onDrop={handleFileDrop}
     >
       {draggingOver && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-primary/10 border-2 border-dashed border-primary pointer-events-none">
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-primary/10 border-2 border-dashed border-primary shadow-glow pointer-events-none">
           <p className="text-sm font-medium text-primary">Soltá el archivo aquí</p>
         </div>
       )}
@@ -289,138 +228,109 @@ export function ChatInterface({ welcomeMessage = DEFAULT_WELCOME }: { welcomeMes
 
       {/* Empty state splash */}
       {isEmptyState ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-5 text-center px-6">
-          <div className="flex items-center justify-center w-12 h-12 rounded-2xl shrink-0" style={{ background: "color-mix(in oklch, var(--primary) 10%, transparent)" }}>
-            <svg viewBox="0 0 24 22" fill="none" className="w-6 h-6" aria-hidden>
+        <div className="flex-1 flex flex-col items-center justify-center gap-5 text-center px-6 bg-[radial-gradient(ellipse_at_top,color-mix(in_oklch,var(--primary)_6%,transparent),transparent_60%)]">
+          <div
+            className="flex items-center justify-center w-14 h-14 rounded-2xl shrink-0 shadow-glow animate-in fade-in zoom-in-95 duration-500 fill-mode-backwards"
+            style={{ background: "color-mix(in oklch, var(--primary) 10%, transparent)" }}
+          >
+            <svg viewBox="0 0 24 22" fill="none" className="w-7 h-7" aria-hidden>
               <path d="M2 11 L7.5 18 L19 2" stroke="var(--primary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
               <line x1="5" y1="21" x2="13" y2="21" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round"/>
             </svg>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">RyM Agente</h1>
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 delay-100 fill-mode-backwards">
+            <h1
+              className="text-3xl font-bold tracking-tight"
+              style={{ fontFamily: "var(--font-cabinet-grotesk)" }}
+            >
+              RyM Agente
+            </h1>
             <p className="text-muted-foreground text-sm mt-1.5 max-w-sm">
               {welcomeMessage}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 justify-center">
-            {CHIPS.map(chip => (
-              <button
-                key={chip}
-                onClick={() => send(chip)}
-                className="px-3 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              >
-                {chip}
-              </button>
-            ))}
-          </div>
+          <Suggestions
+            className="justify-center animate-in fade-in slide-in-from-bottom-2 duration-500 delay-200 fill-mode-backwards"
+            items={CHIPS.map(chip => ({ id: chip, label: chip }))}
+            onSelect={item => send(item.label)}
+            disabled={loading}
+          />
         </div>
       ) : (
-        <ScrollArea className="flex-1 pr-1">
+        <ScrollArea className="flex-1 pr-1 scroll-fade-y">
           <div className="space-y-5 py-4 px-2">
-            {messages.map(msg => {
-              if (msg.role === "system") {
-                return (
-                  <div key={msg.id} className="flex gap-2 items-start">
-                    <div className="h-5 w-5 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
-                      <FileText className="h-3 w-3 text-emerald-700" />
-                    </div>
-                    <div className="rounded-lg px-3 py-2 text-xs bg-emerald-50 text-emerald-900 border border-emerald-100 max-w-[90%]">
-                      {msg.content}
-                    </div>
-                  </div>
-                )
-              }
-
-              if (msg.role === "user") {
-                return (
-                  <div key={msg.id} className="flex justify-end">
-                    <div className="max-w-[80%] px-3.5 py-2.5 rounded-xl text-sm leading-relaxed bg-primary/10 border border-primary/20 text-foreground">
-                      {msg.content}
-                    </div>
-                  </div>
-                )
-              }
-
-              // assistant
-              return (
-                <div key={msg.id} className="flex flex-col gap-0.5 max-w-[92%]">
-                  {msg.tools?.map(t => <ToolCard key={t.toolCallId} tool={t} />)}
-                  {msg.content ? (
-                    <p className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
-                      {msg.content}
-                    </p>
-                  ) : (
-                    !msg.tools?.length && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground mt-1" />
-                  )}
-                </div>
-              )
-            })}
+            {messages.map(msg => <Message key={msg.id} msg={msg} />)}
             <div ref={bottomRef} />
           </div>
         </ScrollArea>
       )}
 
-      {/* Archivos adjuntos */}
-      {attachedFiles.length > 0 && (
-        <div className="space-y-1 mb-2">
-          {attachedFiles.length > 1 && (
-            <p className="px-2 text-[10px] text-muted-foreground">{attachedFiles.length} archivos → se conciliarán por banco y mes</p>
-          )}
-          {attachedFiles.map((f, i) => (
-            <div key={i} className="flex items-center gap-2 px-2 py-1.5 bg-muted rounded-md text-xs">
-              <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <span className="flex-1 truncate">{f.name}</span>
-              <button onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-foreground">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* Input area */}
-      <div className="mt-3 rounded-xl border border-border bg-card px-3 py-2 flex items-end gap-2 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf,.xlsx,.xls,.csv"
-          multiple
-          className="hidden"
-          onChange={e => {
-            const files = Array.from(e.target.files ?? []).filter(esFormatoValido)
-            if (files.length) setAttachedFiles(prev => [...prev, ...files])
-            e.target.value = ""
-          }}
-        />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={loading}
-        >
-          <Paperclip className="h-4 w-4" />
-        </Button>
-        <textarea
-          ref={textareaRef}
-          value={input}
-          rows={1}
-          onChange={e => { setInput(e.target.value); autoResize() }}
-          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }}
+      <PromptInput
+        className="mt-3"
+        value={input}
+        onValueChange={setInput}
+        onSubmit={() => send()}
+        isLoading={loading}
+        disabled={loading}
+      >
+        {/* Archivos adjuntos */}
+        {attachedFiles.length > 0 && (
+          <div className="space-y-1 mb-2">
+            {attachedFiles.length > 1 && (
+              <p className="px-1 text-[10px] text-muted-foreground">{attachedFiles.length} archivos → se conciliarán por banco y mes</p>
+            )}
+            {attachedFiles.map((f, i) => (
+              <div key={i} className="flex items-center gap-2 px-2 py-1.5 bg-muted rounded-lg text-xs">
+                <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="flex-1 truncate">{f.name}</span>
+                <button onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-foreground">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <PromptInputTextarea
           placeholder={attachedFiles.length ? "Agregá un mensaje o enviá los archivos…" : "Preguntá o arrastrá extractos y mayores…"}
-          disabled={loading}
-          className="flex-1 bg-transparent resize-none text-sm leading-relaxed outline-none min-h-[24px] max-h-[120px] placeholder:text-muted-foreground"
-          style={{ lineHeight: "1.5rem" }}
         />
-        <Button
-          onClick={() => send()}
-          disabled={(!input.trim() && attachedFiles.length === 0) || loading}
-          size="icon"
-          className="h-7 w-7 shrink-0"
-        >
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-        </Button>
-      </div>
+
+        <PromptInputActions className="justify-between">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.xlsx,.xls,.csv"
+            multiple
+            className="hidden"
+            onChange={e => {
+              const files = Array.from(e.target.files ?? []).filter(esFormatoValido)
+              if (files.length) setAttachedFiles(prev => [...prev, ...files])
+              e.target.value = ""
+            }}
+          />
+          <PromptInputAction tooltip="Adjuntar pdf / xlsx / csv">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
+          </PromptInputAction>
+          <PromptInputAction tooltip={loading ? "Procesando…" : "Enviar"}>
+            <button
+              type="button"
+              onClick={() => send()}
+              disabled={(!input.trim() && attachedFiles.length === 0) || loading}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-glow transition-all hover:bg-primary/90 disabled:opacity-40 disabled:shadow-none"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+            </button>
+          </PromptInputAction>
+        </PromptInputActions>
+      </PromptInput>
     </div>
   )
 }

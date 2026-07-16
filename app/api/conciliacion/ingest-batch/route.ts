@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import crypto from "crypto"
 import { extraerBanco, persistBanco, type ExtractoBanco } from "@/lib/conciliacion/ingest-banco"
 import { extraerTango, persistTango, type MayorTango } from "@/lib/conciliacion/ingest-tango"
-import { extractRawText } from "@/lib/extractos/raw-text"
-import { classifyText } from "@/lib/orchestrator/classifier"
+import { clasificar } from "@/lib/conciliacion/clasificar"
 import { conciliar } from "@/lib/conciliacion/matching"
 import { reemplazarMatchesYDiscrepancias } from "@/lib/conciliacion/persist"
 import { upsertConciliacion } from "@/lib/conciliacion/registry"
@@ -13,25 +12,10 @@ import { MAX_UPLOAD_BYTES } from "@/lib/utils"
 import { requireOrgId } from "@/lib/auth/current-user"
 import type { Movimiento } from "@/lib/types"
 
+export const maxDuration = 300
+
 const MAX_BATCH_FILES = 20
 const MAX_BATCH_BYTES = 100 * 1024 * 1024 // 100 MB total
-
-// Decide banco vs tango sin doble-OCR: pdf→banco, csv→tango, xlsx→peek texto.
-async function clasificar(buffer: ArrayBuffer, filename: string): Promise<"banco" | "tango" | "desconocido"> {
-  const ext = filename.split(".").pop()?.toLowerCase()
-  if (ext === "pdf") return "banco"
-  if (ext === "csv") return "tango"
-  if (ext === "xlsx" || ext === "xls") {
-    try {
-      const raw = await extractRawText(buffer, filename)
-      const c = classifyText(raw)
-      if (c.type === "tango") return "tango"
-      if (c.type === "banco") return "banco"
-      return /debe|haber|asiento|mayor de cuentas/i.test(raw) ? "tango" : "banco"
-    } catch { return "desconocido" }
-  }
-  return "desconocido"
-}
 
 type BancoItem = { kind: "banco"; periodo?: string; bankId: string; ext: ExtractoBanco; file: string }
 type TangoItem = { kind: "tango"; periodo?: string; mayor: MayorTango; file: string }

@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, Suspense, useState, useRef } from "react"
+import { useEffect, Suspense, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import {
-  Upload, File, X, Loader2, CheckCircle2, AlertCircle, ShoppingCart, Plus, Trash2,
+  Loader2, CheckCircle2, AlertCircle, ShoppingCart, Plus, Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
+import { UploadDropzone } from "@/components/modules/UploadDropzone"
 import { useVentas, PagoData } from "@/lib/context/ventas-context"
 
 function fmt(c: number) {
@@ -135,12 +136,10 @@ function ManualForm({ onSubmit, loading }: { onSubmit: (p: PagoData) => void; lo
 function VentasContent() {
   const searchParams = useSearchParams()
   const urlId = searchParams.get("id")
-  const { sesiones, activeId, selectSesion, uploadFile, guardarManual } = useVentas()
+  const { sesiones, activeId, selectSesion, uploadFiles, guardarManual } = useVentas()
 
-  const [file, setFile] = useState<File | null>(null)
-  const [dragging, setDragging] = useState(false)
   const [inputMode, setInputMode] = useState<"pdf" | "manual">("pdf")
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
     if (urlId && urlId !== activeId && sesiones[urlId]) selectSesion(urlId)
@@ -153,10 +152,10 @@ function VentasContent() {
   const error = active?.error ?? null
   const totalRetenciones = pago?.retenciones.reduce((s, r) => s + r.monto, 0) ?? 0
 
-  async function handleUpload() {
-    if (!file || !activeId) return
-    await uploadFile(activeId, file)
-    setFile(null)
+  async function handleUpload(files: File[]) {
+    setUploading(true)
+    await uploadFiles(files)
+    setUploading(false)
   }
 
   async function handleManual(data: PagoData) {
@@ -204,38 +203,16 @@ function VentasContent() {
               </div>
 
               {inputMode === "pdf" ? (
-                <>
-                  <div
-                    onClick={() => inputRef.current?.click()}
-                    onDragOver={e => { e.preventDefault(); setDragging(true) }}
-                    onDragLeave={() => setDragging(false)}
-                    onDrop={e => {
-                      e.preventDefault(); setDragging(false)
-                      const f = e.dataTransfer.files[0]; if (f) setFile(f)
-                    }}
-                    className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors
-                      ${dragging ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30"}`}
-                  >
-                    <input ref={inputRef} type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden"
-                      onChange={e => e.target.files?.[0] && setFile(e.target.files[0])} />
-                    <Upload className="h-8 w-8 mx-auto mb-3 text-muted-foreground" />
-                    <p className="text-sm font-medium">Arrastrá el comprobante de pago</p>
-                    <p className="text-xs text-muted-foreground mt-1">Orden de pago, recibo de retención — PDF, Excel o CSV</p>
-                  </div>
-
-                  {file && (
-                    <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-md text-sm">
-                      <File className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <span className="flex-1 truncate">{file.name}</span>
-                      <button onClick={() => setFile(null)}><X className="h-4 w-4 text-muted-foreground hover:text-foreground" /></button>
-                    </div>
-                  )}
-
-                  <Button onClick={handleUpload} disabled={!file || loading} className="w-full">
-                    {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Procesando PDF…</> : "Extraer retenciones"}
-                  </Button>
-                  {loading && <p className="text-xs text-muted-foreground text-center">OCR + IA extrayendo datos — puede demorar unos segundos</p>}
-                </>
+                <UploadDropzone
+                  accept=".pdf,.xlsx,.xls,.csv"
+                  multiple
+                  title="Arrastrá comprobantes de retención"
+                  hint="PDF, Excel o CSV — podés subir varios"
+                  buttonLabel="Extraer retenciones"
+                  processing={uploading}
+                  error={error}
+                  onUpload={handleUpload}
+                />
               ) : (
                 <ManualForm onSubmit={handleManual} loading={loading} />
               )}

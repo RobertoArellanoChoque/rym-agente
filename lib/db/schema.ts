@@ -1,6 +1,7 @@
 import { pgTable, text, integer, bigint, serial, jsonb, index, boolean, date, timestamp, check, unique } from "drizzle-orm/pg-core"
 import { sql, relations } from "drizzle-orm"
 import type { Categoria, ConcStage, MatchTipo, TipoDiscrepancia } from "../types"
+import type { BankConfig, ExcelColumnsConfig } from "../bancos/types"
 
 // Montos en centavos ARS → bigint (int4 desborda a ~$21M ARS)
 const centavos = (name: string) => bigint(name, { mode: "number" })
@@ -161,6 +162,19 @@ export const partidas = pgTable("partidas", {
   index("partidas_banco_id_idx").on(t.bancoId),
   index("partidas_org_id_banco_id_idx").on(t.orgId, t.bancoId),
 ])
+
+// Catálogo global de bancos (no org-scoped). Seed en lib/bancos/configs.ts, runtime lee vía lib/bancos/registry.ts.
+export const bancos = pgTable("bancos", {
+  id: text("id").primaryKey(),
+  nombre: text("nombre").notNull(),
+  aliases: jsonb("aliases").$type<string[]>().notNull().default([]), // keywords para detección por regla
+  dateFormat: text("date_format").$type<BankConfig["dateFormat"]>().notNull().default("DD/MM/YYYY"),
+  decimalSeparator: text("decimal_separator").$type<BankConfig["decimalSeparator"]>().notNull().default(","),
+  thousandSeparator: text("thousand_separator").$type<BankConfig["thousandSeparator"]>().notNull().default("."),
+  extractionSystemPrompt: text("extraction_system_prompt"),
+  excelColumns: jsonb("excel_columns").$type<ExcelColumnsConfig | null>(),
+  activo: boolean("activo").notNull().default(true),
+})
 
 export const tarjetasMaestras = pgTable("tarjetas_maestras", {
   id: text("id").primaryKey(),
@@ -329,7 +343,7 @@ export const rateLimits = pgTable("rate_limits", {
   reset: ts("reset").notNull(),
 })
 
-// Idempotencia de sync de Google Drive (id = Google Drive file id)
+// Idempotencia/dedup de ingesta vía n8n (/api/ingest/bulk; id = Google Drive file id)
 export const driveArchivos = pgTable("drive_archivos", {
   id: text("id").primaryKey(),
   nombre: text("nombre").notNull(),
@@ -343,16 +357,6 @@ export const driveArchivos = pgTable("drive_archivos", {
 }, () => [
   check("drive_archivos_estado_chk", inList("estado", ["pendiente", "procesado", "error"])),
 ])
-
-// Config singleton del canal de webhook de Google Drive (id fijo "default")
-export const driveSyncState = pgTable("drive_sync_state", {
-  id: text("id").primaryKey(),
-  pageToken: text("page_token"),
-  channelId: text("channel_id"),
-  resourceId: text("resource_id"),
-  channelExpiration: ts("channel_expiration"),
-  updatedAt: ts("updated_at").notNull().defaultNow(),
-})
 
 // ── Relations (Drizzle Relations API) ──────────────────────────────
 // Construcción solo-TypeScript: habilita db.query.<tabla>.findFirst/findMany({ with: {...} }).

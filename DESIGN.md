@@ -22,16 +22,19 @@
 - **Scale:** xs(12px) sm(14px) md(16px) lg(20px) xl(24px) 2xl(30px) 3xl(36px)
 
 ## Color
-- **Approach:** Restringido — 1 acento fuerte + neutros fríos
-- **Primary:** `oklch(0.47 0.22 264)` = #0439D9 — azul eléctrico Agedrex. Botones, estados activos, focus rings, badges de prioridad
-- **Sidebar bg:** `oklch(0.10 0.06 264)` = #011140 — navy Agedrex. Solo para sidebar/nav
-- **Background:** `oklch(0.985 0.004 247)` = #F8FAFC — gris frío muy sutil
-- **Surface/Cards:** `oklch(1 0 0)` = #FFFFFF — sin sombras, borde 1px
-- **Border:** `oklch(0.90 0.006 247)` — visible pero sutil
-- **Texto primario:** `oklch(0.14 0.02 264)` = #0F172A slate-900
-- **Texto muted:** `oklch(0.51 0.03 264)` = #64748B slate-500
-- **Semantic:** success `oklch(0.56 0.17 145)` #16A34A, warning `oklch(0.66 0.18 60)` #D97706, error `oklch(0.52 0.22 25)` #DC2626
-- **Dark mode:** No aplicado en v1
+- **Approach:** Neutros cálidos tipo lino (base: theme "Claude" de 21st.dev, `@serafimcloud/themes/claude`) + rojo RyM como único acento fuerte
+- **Primary:** `oklch(0.61 0.24 27)` — coral-rojo vívido RyM. Botones, estados activos, focus rings, item activo del sidebar
+- **Background:** `#faf9f5` — lino cálido
+- **Surface/Cards:** `#ffffff` — sin sombras, borde 1px (jerarquía card>fondo; Claude original usa card=bg)
+- **Sidebar bg:** `#f5f4ee` — crema claro; activo en rojo RyM, hover `#e9e6dc`
+- **Secondary/Muted/Accent:** `#e9e6dc` / `#ede9de` / `#e9e6dc` — cálidos Claude
+- **Border:** `#dad9d4` — warm, visible pero sutil. Input `#b4b2a7`
+- **Texto primario:** `#3d3929` (cards `#141413`)
+- **Texto muted:** `#83827d`
+- **Acento secundario:** `--accent-secondary` ámbar `oklch(0.66 0.18 60)` — rompe monocromatismo
+- **Semantic:** success `oklch(0.50 0.15 150)`, destructive `oklch(0.44 0.18 25)` #B91C1C (se conserva rojo semántico, no el destructive negro de Claude — app financiera)
+- **Charts:** hues propios rojo/verde/ámbar/azul/violeta (chart-1..5), no la paleta Claude
+- **Dark mode:** cálido marrón-gris Claude — bg `#262624`, card/popover `#30302e`, sidebar `#1f1e1d`, primary RyM aclarado `oklch(0.70 0.19 27)`, borders en alpha blanco 10%
 
 ## Spacing
 - **Base unit:** 4px
@@ -40,8 +43,8 @@
 
 ## Layout
 - **Approach:** Grid disciplinado
-- **Sidebar:** 240px fijo, navy #011140
-- **Content:** flex-1, background #F8FAFC
+- **Sidebar:** rail colapsable 56px → 192px, crema #f5f4ee (`--sidebar`)
+- **Content:** flex-1, background lino #faf9f5
 - **Two-panel (módulos con chat):** 60/40 split
 - **Max content width:** 1024px (max-w-5xl)
 - **Border radius:** sm(4px) md(8px) lg(10px) — sin bordes bubble
@@ -60,3 +63,7 @@
 | 2026-06-27 | Navy sidebar en lugar de charcoal genérico | Identidad Agedrex inmediata vs. aspecto genérico SaaS |
 | 2026-06-27 | Cabinet Grotesk para headings | Diferenciación: nadie en el espacio ERP/contabilidad la usa |
 | 2026-06-27 | Instrument Sans para body | Más cálido y legible que Geist puro en interfaces densas |
+| 2026-07-15 | Neutros cálidos theme Claude (21st.dev @serafimcloud) | Reemplaza slate frío; lino #faf9f5 + warm grays. Marca RyM (rojo hue 27) se mantiene en primary/ring/activos |
+| 2026-07-15 | Sidebar claro #f5f4ee (revierte navy/slate oscuro) | Look completo Claude en light mode; activo sigue en rojo RyM con texto blanco |
+| 2026-07-15 | Dark mode cálido #262624 | Ya existía dark slate; se migra a marrón-gris Claude, primary RyM aclarado |
+| 2026-07-15 | Destructive sigue rojo #B91C1C, charts con hues propios | Claude usa destructive negro y charts terracotta/violeta; acá la semántica financiera manda |

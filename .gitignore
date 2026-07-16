@@ -48,3 +48,8 @@ data/*.db-wal
 
 # Session files (ephemeral OCR artifacts)
 /tmp/rym-sessions/
+
+# ruflo/claude-flow tooling (estado local, no deployable)
+.claude-flow/
+.swarm/
+ruvector.db

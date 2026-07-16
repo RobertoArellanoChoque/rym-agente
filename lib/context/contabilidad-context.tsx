@@ -31,6 +31,7 @@ type ContabilidadContextValue = {
   deleteSesion: (id: string) => Promise<void>
   renameSesion: (id: string, label: string) => Promise<void>
   uploadFile: (id: string, file: File) => Promise<void>
+  uploadFiles: (id: string, files: File[]) => Promise<void>
 }
 
 const Ctx = createContext<ContabilidadContextValue | null>(null)
@@ -128,6 +129,11 @@ export function ContabilidadProvider({ children }: { children: React.ReactNode }
     }
   }
 
+  // Soltar ARCA+Tango juntos completa la sesión de una; dos archivos del mismo tipo, el segundo pisa al primero (comportamiento actual de la ruta).
+  async function uploadFiles(id: string, files: File[]) {
+    for (const file of files) await uploadFile(id, file)
+  }
+
   useEffect(() => {
     fetch("/api/sesiones?modulo=contabilidad")
       .then(r => r.json())
@@ -154,7 +160,7 @@ export function ContabilidadProvider({ children }: { children: React.ReactNode }
   }, [])
 
   return (
-    <Ctx.Provider value={{ sesiones, activeId, selectSesion, nuevaSesion, deleteSesion, renameSesion, uploadFile }}>
+    <Ctx.Provider value={{ sesiones, activeId, selectSesion, nuevaSesion, deleteSesion, renameSesion, uploadFile, uploadFiles }}>
       {children}
     </Ctx.Provider>
   )
